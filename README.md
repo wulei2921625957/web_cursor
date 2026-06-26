@@ -1,45 +1,159 @@
-# Cursor Cookbook
+# Coding Agent CLI
 
-This repo contains small examples for building with Cursor.
+A small example CLI that runs a Cursor SDK agent against a local workspace.
 
-## Cursor Hooks
+## Getting Started
 
-Cursor Hooks let you run custom checks and workflows around agent events such as prompt submission, shell commands, file edits, and agent completion.
+Use Bun 1.3 or newer. This CLI is Bun-only because OpenTUI's native renderer
+is exposed through `bun:ffi`.
 
-### [Hooks examples](hooks)
+Install dependencies:
 
-A guided project hook setup for audit logging, sensitive prompt guards, and follow-up checks that keep Cursor skills aligned with code changes.
+```bash
+pnpm install
+```
 
-## Cloud Agents
+Set an API key:
 
-### [Self-hosted Cloud Agents lab](cloud-agent)
+```bash
+export CURSOR_API_KEY="crsr_..."
+```
 
-Run Cursor Cloud Agent workers on customer-managed AWS infrastructure with examples for EC2 + Docker, ECS/Fargate, and EKS + Helm.
+Ask for a one-shot task in the current directory:
 
-## Cursor SDK
+```bash
+bun run dev -- "Explain how this project is structured"
+```
 
-The Cursor SDK is the TypeScript API for running Cursor's coding agent from your own apps, scripts, and workflows. It supports the same agent across local workspaces and cloud runtimes, streams agent events as runs progress, and lets you manage prompts, models, cancellation, artifacts, and conversation state from code.
+Start the TUI by omitting the prompt:
 
-To run the SDK examples, create a Cursor API key from the [Cursor integrations dashboard](https://cursor.com/dashboard/integrations), then set it as `CURSOR_API_KEY`.
+```bash
+bun run dev
+```
 
-### [Quickstart](sdk/quickstart)
+Start the local web UI:
 
-A minimal Node.js example that creates a local agent, sends one prompt, and streams the response.
+```bash
+bun run dev:ui
+```
 
-### [Prototyping tool](sdk/app-builder)
+The web UI starts a local server, opens a browser, and uses the current
+directory as the workspace by default. Passing `--cwd /path/to/project` opens
+that project at startup, and opening or switching projects in the UI also
+switches the underlying agent process working directory.
 
-A web app for spinning up agents to scaffold new projects and iterate on ideas in a sandboxed cloud environment.
+## Context compaction
 
-### [Kanban board](sdk/agent-kanban)
+The CLI keeps a lightweight transcript of each TUI session. When the estimated
+conversation history grows past the configured limit, it asks a fresh Cursor SDK
+agent to summarize older turns, starts a new agent, and injects that compressed
+memory into future prompts.
 
-A kanban board for viewing Cursor Cloud Agents, grouping them by status or repository, previewing artifacts, and creating new cloud agents from a repository and prompt.
+Inside the TUI, run `/compact` to force this manually.
 
-### [Coding agent CLI](sdk/coding-agent-cli)
+Useful settings:
 
-A minimal command-line interface that lets you spawn Cursor agents from your terminal.
+```bash
+export CURSOR_AUTO_COMPACT=true
+export CURSOR_CONTEXT_MAX_CHARS=120000
+export CURSOR_CONTEXT_RETAIN_CHARS=24000
+export CURSOR_CONTEXT_SUMMARY_CHARS=16000
+```
 
-### [DAG task runner](sdk/dag-task-runner)
+You can also pass `--no-auto-compact`, `--context-max-chars`,
+`--context-retain-chars`, `--context-summary-chars`, or `--no-sandbox` on the
+command line. The web UI disables Cursor's local shell sandbox by default to
+avoid sandbox/PTY tool hangs; pass `--sandbox enabled` to opt back in.
 
-Decompose a task into a JSON DAG, fan it out across local subagents, and stream live status into a Cursor Canvas that hot-reloads on every state change. Ships as both a runnable example and a copyable Cursor skill at [`.cursor/skills/dag-task-runner`](.cursor/skills/dag-task-runner).
+## Packaging
 
-Learn more in the [Cursor SDK TypeScript docs](https://cursor.com/docs/api/sdk/typescript).
+Build and create a tarball:
+
+```bash
+npm run build
+npm pack
+```
+
+Install the tarball on another machine:
+
+```bash
+npm install -g ./coding-agent-cli-0.1.0.tgz
+export CURSOR_API_KEY="crsr_..."
+code-agent --cwd /path/to/project "Explain this project"
+```
+
+The installed CLI still requires Bun 1.3 or newer because the executable uses a
+`#!/usr/bin/env bun` entrypoint.
+
+To create a portable archive that includes Bun and `node_modules`:
+
+```bash
+npm run package:portable
+```
+
+This creates `release/coding-agent-cli-<version>-<platform>.tar.gz`. The archive
+can be copied to another machine with the same OS/CPU architecture and run
+without installing Bun or npm dependencies:
+
+```bash
+tar -xzf coding-agent-cli-0.1.0-darwin-arm64.tar.gz
+export CURSOR_API_KEY="crsr_..."
+./coding-agent-cli-0.1.0-darwin-arm64/bin/code-agent --cwd /path/to/project "Explain this project"
+```
+
+Build one portable archive per target platform. A macOS arm64 archive will not
+run on Linux, Windows, or Intel macOS.
+
+To build a Windows x64 portable archive from macOS or Linux:
+
+```bash
+npm run package:portable -- --target win32-x64
+```
+
+This creates `release/coding-agent-cli-0.1.0-win32-x64.zip`. On Windows:
+
+```powershell
+Expand-Archive .\coding-agent-cli-0.1.0-win32-x64.zip
+.\coding-agent-cli-0.1.0-win32-x64\install.cmd
+```
+
+Open a new PowerShell window after installation:
+
+```powershell
+cd C:\path\to\project
+code-agent "Explain this project"
+```
+
+Or open the browser UI:
+
+```powershell
+cd C:\path\to\project
+code-agent-ui
+```
+
+If the API key was entered incorrectly, start the TUI and set it again:
+
+```powershell
+code-agent
+```
+
+Then type:
+
+```text
+/set_apiKey --save
+```
+
+Paste the key on the next input line and press Enter.
+
+Without installing, run the root launcher directly:
+
+```powershell
+$env:CURSOR_API_KEY = "crsr_..."
+cd C:\path\to\project
+C:\path\to\coding-agent-cli-0.1.0-win32-x64\code-agent.cmd "Explain this project"
+C:\path\to\coding-agent-cli-0.1.0-win32-x64\code-agent-ui.cmd
+```
+
+## Notes
+
+Inside the TUI, type `/` to open the command menu. You can choose a model, compact context, reset the session, update the API key, or exit from there.
