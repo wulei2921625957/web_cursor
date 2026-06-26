@@ -1,0 +1,1207 @@
+{
+  "version": 1,
+  "activeProjectId": "project_mqtgb8cv_dvck5q",
+  "activeSessionId": null,
+  "projects": [
+    {
+      "id": "project_mqtg4k26_i1wi70",
+      "cwd": "/Users/wulei/software/codeProject/yt/kunshu-fe-pro",
+      "name": "kunshu-fe-pro",
+      "sessions": [
+        {
+          "id": "session_mqtgipk2_wtto8q",
+          "agentState": {
+            "contextSummary": "",
+            "executionMode": "local",
+            "history": [
+              {
+                "role": "user",
+                "text": "分析本项目"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=ls -la /Users/wulei/software/codeProject/yt/kunshu-fe-pro && find /Users/wule...)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/README.md)"
+              },
+              {
+                "role": "tool",
+                "text": "running grep (pattern=. path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro glob=package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=pwd && ls -la)"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed task"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/README.md)"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=cat /Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json 2>&1; ech...)"
+              },
+              {
+                "role": "tool",
+                "text": "running grep (pattern=name glob=package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "completed task"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "assistant",
+                "text": "正在分析项目结构与关键配置。\n当前无法读取工作区文件：对 `package.json`、`README.md` 以及目录列表的读取均返回 `Tool failed`，Shell 命令也没有输出，因此还不能基于真实代码给出项目分析。\n\n**请重试一次**（发送「重试」或再次提出分析请求）。若仍失败，可在项目根目录执行下面命令，把完整输出贴过来，我会据此给出分析：\n\n```bash\ncd /Users/wulei/software/codeProject/yt/kunshu-fe-pro\n\necho \"========== 1. 根目录 ==========\"\nls -la .\n\necho \"\"\necho \"========== 2. package.json ==========\"\ncat package.json\n\necho \"\"\necho \"========== 3. README.md ==========\"\n[ -f README.md ] && cat README.md || echo \"README.md not found\"\n\necho \"\"\necho \"========== 4. src 目录结构 ==========\"\nfind src -maxdepth 3 -type d 2>/dev/null | head -60\n\necho \"\"\necho \"========== 5. 关键配置文件 ==========\"\nfind . -maxdepth 2 \\( \\\n  -name \"vite.config.*\" -o -name \"webpack.config.*\" -o -name \"next.config.*\" \\\n  -o -name \"tsconfig*.json\" -o -name \"eslint.config.*\" -o -name \".eslintrc*\" \\\n  -o -name \"tailwind.config.*\" -o -name \".env.example\" \\\n\\) 2>/dev/null | grep -v node_modules | sort\n```\n\n恢复访问后，我会从以下维度给出完整分析：\n\n| 维度 | 内容 |\n|------|------|\n| 项目定位 | 名称、用途、业务场景 |\n| 技术栈 | 框架、UI 库、语言、构建工具 |\n| 目录结构 | `src` 下模块划分与职责 |\n| 入口与路由 | 启动流程、页面/路由组织 |\n| 状态与数据 | 状态管理、API 层、鉴权 |\n| 脚本与依赖 | `dev`/`build`/`test`、核心依赖 |\n| 架构特点 | 设计模式、可扩展点、注意事项 |\n\n请重试或粘贴上述命令输出，我会继续完成分析。"
+              },
+              {
+                "role": "result",
+                "text": "status=finished duration=108.9s"
+              }
+            ],
+            "model": {
+              "id": "composer-2"
+            }
+          },
+          "createdAt": 1782389216738,
+          "messages": [
+            {
+              "kind": "meta",
+              "text": "[新会话] 已在 kunshu-fe-pro 中创建 新会话 2。"
+            },
+            {
+              "kind": "user",
+              "text": "分析本项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 正在分析本项目。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "assistant",
+              "text": "正在分析项目结构与关键配置。\n当前无法读取工作区文件：对 `package.json`、`README.md` 以及目录列表的读取均返回 `Tool failed`，Shell 命令也没有输出，因此还不能基于真实代码给出项目分析。\n\n**请重试一次**（发送「重试」或再次提出分析请求）。若仍失败，可在项目根目录执行下面命令，把完整输出贴过来，我会据此给出分析：\n\n```bash\ncd /Users/wulei/software/codeProject/yt/kunshu-fe-pro\n\necho \"========== 1. 根目录 ==========\"\nls -la .\n\necho \"\"\necho \"========== 2. package.json ==========\"\ncat package.json\n\necho \"\"\necho \"========== 3. README.md ==========\"\n[ -f README.md ] && cat README.md || echo \"README.md not found\"\n\necho \"\"\necho \"========== 4. src 目录结构 ==========\"\nfind src -maxdepth 3 -type d 2>/dev/null | head -60\n\necho \"\"\necho \"========== 5. 关键配置文件 ==========\"\nfind . -maxdepth 2 \\( \\\n  -name \"vite.config.*\" -o -name \"webpack.config.*\" -o -name \"next.config.*\" \\\n  -o -name \"tsconfig*.json\" -o -name \"eslint.config.*\" -o -name \".eslintrc*\" \\\n  -o -name \"tailwind.config.*\" -o -name \".env.example\" \\\n\\) 2>/dev/null | grep -v node_modules | sort\n```\n\n恢复访问后，我会从以下维度给出完整分析：\n\n| 维度 | 内容 |\n|------|------|\n| 项目定位 | 名称、用途、业务场景 |\n| 技术栈 | 框架、UI 库、语言、构建工具 |\n| 目录结构 | `src` 下模块划分与职责 |\n| 入口与路由 | 启动流程、页面/路由组织 |\n| 状态与数据 | 状态管理、API 层、鉴权 |\n| 脚本与依赖 | `dev`/`build`/`test`、核心依赖 |\n| 架构特点 | 设计模式、可扩展点、注意事项 |\n\n请重试或粘贴上述命令输出，我会继续完成分析。"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed task"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 工具全部失效，无法读取任何文件。暂时无法执行项目分析。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] status=finished duration=108.9s"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] 流式输出结束"
+            }
+          ],
+          "title": "分析本项目",
+          "updatedAt": 1782389332360
+        },
+        {
+          "id": "session_mqtg5izz_qsasj4",
+          "agentState": {
+            "contextSummary": "",
+            "executionMode": "local",
+            "history": [
+              {
+                "role": "user",
+                "text": "分析一下这个项目"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=ls -la /Users/wulei/software/codeProject/yt/kunshu-fe-pro && echo \"---\" && ca...)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed task"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=cd /Users/wulei/software/codeProject/yt/kunshu-fe-pro && ls -la)"
+              },
+              {
+                "role": "tool",
+                "text": "running grep (pattern=. path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running shell (command=pwd && ls)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "completed task"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/README.md)"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "tool",
+                "text": "running glob"
+              },
+              {
+                "role": "assistant",
+                "text": "先查看项目结构和关键配置文件，了解技术栈与整体架构。\n当前环境里所有文件读取与终端命令都失败了（`Read` / `Glob` / `Grep` 返回 `Tool failed; this may be temporary`，Shell 无输出且状态未知），已多次重试仍无法访问 `/Users/wulei/software/codeProject/yt/kunshu-fe-pro` 下的任何内容，因此没法基于真实代码给出项目分析。\n\n**请在本对话里再发一次「分析一下这个项目」**（或新开一轮对话），通常 transient 故障恢复后我就能直接读仓库。\n\n若仍失败，可把下面命令的输出贴过来，我可以据此做完整分析：\n\n```bash\nls -la /Users/wulei/software/codeProject/yt/kunshu-fe-pro\ncat /Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json\nfind /Users/wulei/software/codeProject/yt/kunshu-fe-pro -maxdepth 3 \\\n  -not -path '*/node_modules/*' -not -path '*/.git/*'\n```\n\n拿到文件后我会覆盖：技术栈、目录结构、`src` 模块划分、路由与 API、构建/部署方式等。"
+              },
+              {
+                "role": "result",
+                "text": "status=finished duration=123.7s"
+              },
+              {
+                "role": "user",
+                "text": "工具调用失败的信息是什么"
+              },
+              {
+                "role": "tool",
+                "text": "running read (path=/Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json)"
+              },
+              {
+                "role": "assistant",
+                "text": "根据上一轮对话里的实际工具返回，失败信息如下：\n上一轮对话里，各工具返回的失败信息如下：\n\n## 1. Read / Glob / Grep\n\n```\nError: Tool failed; this may be temporary. Try again.\n```\n\n或：\n\n```\nTool failed; this may be temporary. Try again.\n```\n\nGrep 还会带上前缀：\n\n```\nError running tool: Tool failed; this may be temporary. Try again.\n```\n\n## 2. Shell\n\n没有具体错误文案，而是系统提示：\n\n```\nThe shell command returned no exit status, so its result is unknown — do not assume it ran or succeeded. If this repeats, the execution environment may need to be restarted.\n```\n\n也就是说：命令是否执行、是否成功都无法判断，stdout/stderr 也为空。\n\n## 3. Task 子代理\n\n- **explore**：报告访问 `/Users/wulei/software/codeProject/yt/kunshu-fe-pro` 时所有工具调用均失败。\n- **shell**：报告 Shell 连 `echo` 都无输出，文件读取工具不可用。\n\n---\n\n## 当前状态（刚重试）\n\n再次调用 `Read` 读取 `package.json`，仍返回：\n\n```\nError: Tool failed; this may be temporary. Try again.\n```\n\n---\n\n## 小结\n\n| 工具 | 失败表现 |\n|------|----------|\n| Read / Glob / Grep | 统一提示「Tool failed; this may be temporary」 |\n| Shell | 无输出、无 exit code，状态未知 |\n| Task 子代理 | 同样无法读文件或执行 Shell |\n\n这类错误通常表示 **Cursor 与本地工作区的工具通道异常**（环境/会话问题），而不是你项目代码本身报错。可尝试：重开对话、重启 Cursor，或检查工作区路径是否可访问。恢复后我可以继续分析项目。"
+              },
+              {
+                "role": "result",
+                "text": "status=finished duration=13.8s"
+              }
+            ],
+            "model": {
+              "id": "composer-2"
+            }
+          },
+          "createdAt": 1782388601711,
+          "messages": [
+            {
+              "kind": "meta",
+              "text": "[新会话] 已在 kunshu-fe-pro 中创建 新会话 1。"
+            },
+            {
+              "kind": "user",
+              "text": "分析一下这个项目"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 请先设置 CURSOR_API_KEY。"
+            },
+            {
+              "kind": "user",
+              "text": "分析一下这个项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 用户要求分析项目。我需要先查看工作区中的文件结构和代码内容。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "assistant",
+              "text": "先查看项目结构和关键配置文件，了解技术栈与整体架构。\n当前环境里所有文件读取与终端命令都失败了（`Read` / `Glob` / `Grep` 返回 `Tool failed; this may be temporary`，Shell 无输出且状态未知），已多次重试仍无法访问 `/Users/wulei/software/codeProject/yt/kunshu-fe-pro` 下的任何内容，因此没法基于真实代码给出项目分析。\n\n**请在本对话里再发一次「分析一下这个项目」**（或新开一轮对话），通常 transient 故障恢复后我就能直接读仓库。\n\n若仍失败，可把下面命令的输出贴过来，我可以据此做完整分析：\n\n```bash\nls -la /Users/wulei/software/codeProject/yt/kunshu-fe-pro\ncat /Users/wulei/software/codeProject/yt/kunshu-fe-pro/package.json\nfind /Users/wulei/software/codeProject/yt/kunshu-fe-pro -maxdepth 3 \\\n  -not -path '*/node_modules/*' -not -path '*/.git/*'\n```\n\n拿到文件后我会覆盖：技术栈、目录结构、`src` 模块划分、路由与 API、构建/部署方式等。"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 工具调用持续失败，准备尝试 MCP 文件系统或其他方式来访问项目。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed task"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 工具调用持续失败。我将向用户说明具体的技术问题并请求重试。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] status=finished duration=123.7s"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] 流式输出结束"
+            },
+            {
+              "kind": "user",
+              "text": "工具调用失败的信息是什么"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 用户询问此前工具调用失败的具体错误信息。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 此前工具调用失败时，Read 和 Glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 工具均返回了临时性错误提示：\"Tool"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] failed; this may be"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] temporary. Try again.\""
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "assistant",
+              "text": "根据上一轮对话里的实际工具返回，失败信息如下：\n上一轮对话里，各工具返回的失败信息如下：\n\n## 1. Read / Glob / Grep\n\n```\nError: Tool failed; this may be temporary. Try again.\n```\n\n或：\n\n```\nTool failed; this may be temporary. Try again.\n```\n\nGrep 还会带上前缀：\n\n```\nError running tool: Tool failed; this may be temporary. Try again.\n```\n\n## 2. Shell\n\n没有具体错误文案，而是系统提示：\n\n```\nThe shell command returned no exit status, so its result is unknown — do not assume it ran or succeeded. If this repeats, the execution environment may need to be restarted.\n```\n\n也就是说：命令是否执行、是否成功都无法判断，stdout/stderr 也为空。\n\n## 3. Task 子代理\n\n- **explore**：报告访问 `/Users/wulei/software/codeProject/yt/kunshu-fe-pro` 时所有工具调用均失败。\n- **shell**：报告 Shell 连 `echo` 都无输出，文件读取工具不可用。\n\n---\n\n## 当前状态（刚重试）\n\n再次调用 `Read` 读取 `package.json`，仍返回：\n\n```\nError: Tool failed; this may be temporary. Try again.\n```\n\n---\n\n## 小结\n\n| 工具 | 失败表现 |\n|------|----------|\n| Read / Glob / Grep | 统一提示「Tool failed; this may be temporary」 |\n| Shell | 无输出、无 exit code，状态未知 |\n| Task 子代理 | 同样无法读文件或执行 Shell |\n\n这类错误通常表示 **Cursor 与本地工作区的工具通道异常**（环境/会话问题），而不是你项目代码本身报错。可尝试：重开对话、重启 Cursor，或检查工作区路径是否可访问。恢复后我可以继续分析项目。"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] status=finished duration=13.8s"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] 流式输出结束"
+            },
+            {
+              "kind": "user",
+              "text": "分析本项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "assistant",
+              "text": "先了解项目整体结构、技术栈和主要模块。\n"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "user",
+              "text": "分析本项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "assistant",
+              "text": "先梳理项目整体结构、技术栈和主要模块。\n"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            }
+          ],
+          "title": "分析一下这个项目",
+          "updatedAt": 1782389102874
+        }
+      ]
+    },
+    {
+      "id": "project_mqtgb8cv_dvck5q",
+      "cwd": "/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-agent-cli",
+      "name": "coding-agent-cli",
+      "sessions": [
+        {
+          "id": "session_mqtgln9l_dk4v8c",
+          "agentState": {
+            "contextSummary": "",
+            "executionMode": "local",
+            "history": [],
+            "model": {
+              "id": "composer-2"
+            }
+          },
+          "createdAt": 1782389353737,
+          "messages": [
+            {
+              "kind": "meta",
+              "text": "[新会话] 已在 coding-agent-cli 中创建 新会话 2。"
+            },
+            {
+              "kind": "user",
+              "text": "分析本项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "meta error",
+              "text": "[错误] 当前任务执行中，结束后再切换会话。"
+            },
+            {
+              "kind": "assistant",
+              "text": "先梳理项目结构和关键配置文件，再据此总结架构与用途。\n"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running shell"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            }
+          ],
+          "title": "分析本项目",
+          "updatedAt": 1782389417135
+        },
+        {
+          "id": "session_mqtgba02_4ue5zy",
+          "agentState": {
+            "contextSummary": "",
+            "executionMode": "local",
+            "history": [
+              {
+                "role": "user",
+                "text": "分析本项目"
+              },
+              {
+                "role": "tool",
+                "text": "completed glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed grep (pattern=. glob=src/*)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed grep (pattern=^(async )?function |^const \\w+ = (async )?\\(|^export path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed grep (pattern=createServer|/api/|handleRequest|HTML|SSE path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed grep (pattern=handleSlashCommand|/local|/compact|sendPrompt path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "tool",
+                "text": "completed glob"
+              },
+              {
+                "role": "tool",
+                "text": "completed read (path=/Users/wulei/software/codeProject/ideaProject/aiProject/cookbook/sdk/coding-a...)"
+              },
+              {
+                "role": "assistant",
+                "text": "先快速摸清项目结构、技术栈和主要入口，再给你一份清晰的项目分析。\n# Coding Agent CLI 项目分析\n\n这是一个基于 **Cursor SDK** 的轻量级终端编码 Agent 示例项目（v0.1.0），属于 cookbook/sdk 系列。它演示如何用 `@cursor/sdk` 在本地工作区运行 AI 编码助手，并提供 **三种交互方式**：一次性 CLI、终端 TUI、本地 Web UI。\n\n---\n\n## 1. 项目定位\n\n| 维度 | 说明 |\n|------|------|\n| 用途 | 在指定目录下让 AI 读代码、改代码、跑命令 |\n| 运行时 | **Bun ≥ 1.3**（OpenTUI 依赖 `bun:ffi` 原生渲染） |\n| 包管理 | pnpm |\n| 认证 | `CURSOR_API_KEY` 环境变量 |\n| 默认模型 | `composer-2`（可通过 `CURSOR_MODEL` 或 `--model` 覆盖） |\n\n---\n\n## 2. 目录结构\n\n```\ncoding-agent-cli/\n├── src/\n│   ├── index.ts        # CLI 入口 (code-agent)\n│   ├── ui.ts           # Web UI 入口 (code-agent-ui)，~5200 行\n│   ├── agent.ts        # 核心会话逻辑 (~1400 行)\n│   ├── commands.ts     # TUI 斜杠命令定义\n│   └── tui/App.tsx     # 终端 TUI React 组件\n├── dist/               # TypeScript 编译产物\n├── scripts/\n│   └── package-portable.mjs  # 跨平台便携包打包\n├── release/            # 已构建的便携包 (darwin-arm64, win32-x64)\n└── .session/           # Web UI 会话持久化数据\n```\n\n源码体量不大（约 5 个核心文件），但 `ui.ts` 内嵌了完整的前端 HTML/CSS/JS，因此文件较大。\n\n---\n\n## 3. 架构概览\n\n```mermaid\nflowchart TB\n    subgraph Entry[\"入口层\"]\n        CLI[\"index.ts<br/>code-agent\"]\n        WebUI[\"ui.ts<br/>code-agent-ui\"]\n    end\n\n    subgraph UI[\"交互层\"]\n        Plain[\"一次性输出模式\"]\n        TUI[\"OpenTUI + React<br/>tui/App.tsx\"]\n        Browser[\"HTTP Server + 内嵌 SPA\"]\n    end\n\n    subgraph Core[\"核心层\"]\n        Session[\"CodingAgentSession<br/>agent.ts\"]\n    end\n\n    subgraph SDK[\"外部依赖\"]\n        CursorSDK[\"@cursor/sdk<br/>Agent / Run / Cursor.models\"]\n    end\n\n    CLI --> Plain\n    CLI --> TUI\n    WebUI --> Browser\n    Plain --> Session\n    TUI --> Session\n    Browser --> Session\n    Session --> CursorSDK\n```\n\n---\n\n## 4. 核心模块详解\n\n### 4.1 `agent.ts` — 会话引擎\n\n`CodingAgentSession` 是整个项目的核心，负责：\n\n- **Agent 生命周期**：创建、复用、销毁 SDK Agent\n- **执行模式**：\n  - `local`：在 `cwd` 本地目录操作（默认）\n  - `cloud`：通过 GitHub 远程仓库在云端执行（需 `remote.origin.url`）\n- **Prompt 构建**：注入系统指令 + 压缩上下文 + 用户任务\n- **事件流**：将 SDK 消息映射为统一 `AgentEvent`（assistant_delta、tool、thinking、status 等）\n- **上下文压缩（Context Compaction）**：长对话自动/手动压缩\n\n默认压缩配置：\n\n```133:139:src/agent.ts\nexport const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {\n  enabled: true,\n  maxHistoryChars: 120_000,\n  retainRecentChars: 24_000,\n  summaryMaxChars: 16_000,\n  maxCompactionInputChars: 160_000,\n}\n```\n\n压缩流程：\n1. 估算历史字符数超过阈值 → 触发压缩\n2. 保留最近 N 字符的原始对话\n3. 用独立 Agent 将旧对话摘要为「carry-forward memory」\n4. 销毁旧 Agent，新 Agent 继续时注入摘要\n5. 若 LLM 摘要失败，使用确定性 fallback 截断\n\n还包含错误恢复逻辑：上下文超限、HTTP/2 stream 错误等场景下的重试与降级。\n\n### 4.2 `index.ts` — CLI 入口\n\n三种运行模式：\n\n| 模式 | 触发条件 | 行为 |\n|------|----------|------|\n| 一次性 | 传入 prompt 参数 | 流式输出到 stdout/stderr，无 TUI |\n| 管道 | 非 TTY stdin | 从 stdin 读 prompt |\n| 交互 TUI | 无 prompt + TTY | 启动 OpenTUI 全屏界面 |\n\n支持的 CLI 参数：`--cwd`、`--model`、`--force`、`--no-sandbox`、`--no-auto-compact`、上下文相关参数等。\n\n### 4.3 `tui/App.tsx` — 终端 UI\n\n基于 **OpenTUI + React 19** 构建，功能包括：\n\n- 对话 transcript 滚动浏览\n- 斜杠命令菜单（输入 `/` 触发）\n- 模型选择器（支持 fast/thinking 偏好筛选）\n- Ctrl+C 取消运行 / 退出\n- API Key 安全输入\n\n斜杠命令定义在 `commands.ts`：\n\n```16:25:src/commands.ts\nexport const slashCommands: SlashCommand[] = [\n  { name: \"/help\", summary: \"查看可用命令\" },\n  { name: \"/local\", summary: \"使用本地项目\" },\n  { name: \"/model\", summary: \"切换模型\" },\n  { name: \"/compact\", summary: \"压缩上下文\" },\n  { name: \"/reset\", summary: \"重置会话\" },\n  { name: \"/set_apiKey\", summary: \"设置密钥，--save 保存\" },\n  { name: \"/exit\", summary: \"退出程序\" },\n  { name: \"/quit\", summary: \"退出程序\" },\n]\n```\n\n### 4.4 `ui.ts` — Web UI\n\n本地 HTTP 服务器（默认 `127.0.0.1` + 随机端口），主要能力：\n\n- **多项目 / 多会话管理**（侧边栏）\n- **会话持久化**到 `.session/sessions.json`\n- **实例锁**防止多个 UI 进程冲突\n- **Git 变更面板**（`git status` / `git diff --numstat`）\n- **SSE 流式响应**（`/api/run`、`/api/compact`）\n- 内嵌完整 SPA（`renderCodexAppHtml()`），无需额外前端构建\n\n主要 API 端点：\n\n| 端点 | 方法 | 功能 |\n|------|------|------|\n| `/api/status` | GET | 当前状态 |\n| `/api/models` | GET | 可用模型列表 |\n| `/api/changes` | GET | 工作区 Git 变更 |\n| `/api/run` | POST | 发送 prompt（SSE 流） |\n| `/api/compact` | POST | 手动压缩上下文 |\n| `/api/projects/*` | POST | 打开/选择项目 |\n| `/api/sessions/*` | POST/DELETE | 会话管理 |\n\nWeb UI 默认 **禁用 sandbox**（避免 PTY 工具挂起），TUI/CLI 则遵循环境变量或参数配置。\n\n---\n\n## 5. 技术栈\n\n| 层级 | 技术 |\n|------|------|\n| 语言 | TypeScript 6 (strict) |\n| 运行时 | Bun 1.3+ |\n| AI SDK | `@cursor/sdk` ^1.0.7 |\n| TUI | `@opentui/core` + `@opentui/react` + React 19 |\n| 构建 | `tsc` → ESM (`dist/`) |\n| 打包 | 自定义 `package-portable.mjs`（含 Bun runtime） |\n\n---\n\n## 6. 分发方式\n\n1. **npm 包**：`npm pack` → 全局安装 `code-agent` / `code-agent-ui`（仍需本机 Bun）\n2. **便携包**：`npm run package:portable` → 含 Bun + node_modules 的 tar.gz/zip\n   - 已预构建：`release/coding-agent-cli-0.1.0-darwin-arm64`、`win32-x64`\n   - 支持跨平台构建：`--target win32-x64`\n\n---\n\n## 7. 设计特点\n\n**优点：**\n- 单一核心类 `CodingAgentSession` 被 CLI/TUI/Web UI 共用，逻辑集中\n- 上下文压缩设计完整（自动触发、手动 `/compact`、失败 fallback、超限重试）\n- 三种 UI 覆盖不同使用场景（脚本管道、终端交互、浏览器）\n- 便携包方案降低部署门槛\n\n**可注意的点：**\n- `ui.ts` 单文件过大（HTML/CSS/JS 全内嵌），维护成本较高\n- 无单元测试\n- Cloud 模式目前仅支持 GitHub 远程\n- 强依赖 Bun，无法用 Node.js 直接运行 TUI\n\n---\n\n## 8. 快速上手\n\n```bash\npnpm install\nexport CURSOR_API_KEY=\"crsr_...\"\n\n# 一次性任务\nbun run dev -- \"分析本项目\"\n\n# 终端 TUI\nbun run dev\n\n# 浏览器 UI\nbun run dev:ui\n```\n\n---\n\n如果你想深入某一块（例如上下文压缩实现、Web UI API、便携包构建流程），可以说一下，我可以继续拆细讲。"
+              },
+              {
+                "role": "result",
+                "text": "status=finished duration=58.9s"
+              }
+            ],
+            "model": {
+              "id": "composer-2"
+            }
+          },
+          "createdAt": 1782388869986,
+          "messages": [
+            {
+              "kind": "meta",
+              "text": "[新会话] 已在 coding-agent-cli 中创建 新会话 1。"
+            },
+            {
+              "kind": "user",
+              "text": "分析本项目"
+            },
+            {
+              "kind": "meta",
+              "text": "[开始] 任务已提交"
+            },
+            {
+              "kind": "activity",
+              "text": "[状态] RUNNING"
+            },
+            {
+              "kind": "assistant",
+              "text": "先快速摸清项目结构、技术栈和主要入口，再给你一份清晰的项目分析。\n# Coding Agent CLI 项目分析\n\n这是一个基于 **Cursor SDK** 的轻量级终端编码 Agent 示例项目（v0.1.0），属于 cookbook/sdk 系列。它演示如何用 `@cursor/sdk` 在本地工作区运行 AI 编码助手，并提供 **三种交互方式**：一次性 CLI、终端 TUI、本地 Web UI。\n\n---\n\n## 1. 项目定位\n\n| 维度 | 说明 |\n|------|------|\n| 用途 | 在指定目录下让 AI 读代码、改代码、跑命令 |\n| 运行时 | **Bun ≥ 1.3**（OpenTUI 依赖 `bun:ffi` 原生渲染） |\n| 包管理 | pnpm |\n| 认证 | `CURSOR_API_KEY` 环境变量 |\n| 默认模型 | `composer-2`（可通过 `CURSOR_MODEL` 或 `--model` 覆盖） |\n\n---\n\n## 2. 目录结构\n\n```\ncoding-agent-cli/\n├── src/\n│   ├── index.ts        # CLI 入口 (code-agent)\n│   ├── ui.ts           # Web UI 入口 (code-agent-ui)，~5200 行\n│   ├── agent.ts        # 核心会话逻辑 (~1400 行)\n│   ├── commands.ts     # TUI 斜杠命令定义\n│   └── tui/App.tsx     # 终端 TUI React 组件\n├── dist/               # TypeScript 编译产物\n├── scripts/\n│   └── package-portable.mjs  # 跨平台便携包打包\n├── release/            # 已构建的便携包 (darwin-arm64, win32-x64)\n└── .session/           # Web UI 会话持久化数据\n```\n\n源码体量不大（约 5 个核心文件），但 `ui.ts` 内嵌了完整的前端 HTML/CSS/JS，因此文件较大。\n\n---\n\n## 3. 架构概览\n\n```mermaid\nflowchart TB\n    subgraph Entry[\"入口层\"]\n        CLI[\"index.ts<br/>code-agent\"]\n        WebUI[\"ui.ts<br/>code-agent-ui\"]\n    end\n\n    subgraph UI[\"交互层\"]\n        Plain[\"一次性输出模式\"]\n        TUI[\"OpenTUI + React<br/>tui/App.tsx\"]\n        Browser[\"HTTP Server + 内嵌 SPA\"]\n    end\n\n    subgraph Core[\"核心层\"]\n        Session[\"CodingAgentSession<br/>agent.ts\"]\n    end\n\n    subgraph SDK[\"外部依赖\"]\n        CursorSDK[\"@cursor/sdk<br/>Agent / Run / Cursor.models\"]\n    end\n\n    CLI --> Plain\n    CLI --> TUI\n    WebUI --> Browser\n    Plain --> Session\n    TUI --> Session\n    Browser --> Session\n    Session --> CursorSDK\n```\n\n---\n\n## 4. 核心模块详解\n\n### 4.1 `agent.ts` — 会话引擎\n\n`CodingAgentSession` 是整个项目的核心，负责：\n\n- **Agent 生命周期**：创建、复用、销毁 SDK Agent\n- **执行模式**：\n  - `local`：在 `cwd` 本地目录操作（默认）\n  - `cloud`：通过 GitHub 远程仓库在云端执行（需 `remote.origin.url`）\n- **Prompt 构建**：注入系统指令 + 压缩上下文 + 用户任务\n- **事件流**：将 SDK 消息映射为统一 `AgentEvent`（assistant_delta、tool、thinking、status 等）\n- **上下文压缩（Context Compaction）**：长对话自动/手动压缩\n\n默认压缩配置：\n\n```133:139:src/agent.ts\nexport const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {\n  enabled: true,\n  maxHistoryChars: 120_000,\n  retainRecentChars: 24_000,\n  summaryMaxChars: 16_000,\n  maxCompactionInputChars: 160_000,\n}\n```\n\n压缩流程：\n1. 估算历史字符数超过阈值 → 触发压缩\n2. 保留最近 N 字符的原始对话\n3. 用独立 Agent 将旧对话摘要为「carry-forward memory」\n4. 销毁旧 Agent，新 Agent 继续时注入摘要\n5. 若 LLM 摘要失败，使用确定性 fallback 截断\n\n还包含错误恢复逻辑：上下文超限、HTTP/2 stream 错误等场景下的重试与降级。\n\n### 4.2 `index.ts` — CLI 入口\n\n三种运行模式：\n\n| 模式 | 触发条件 | 行为 |\n|------|----------|------|\n| 一次性 | 传入 prompt 参数 | 流式输出到 stdout/stderr，无 TUI |\n| 管道 | 非 TTY stdin | 从 stdin 读 prompt |\n| 交互 TUI | 无 prompt + TTY | 启动 OpenTUI 全屏界面 |\n\n支持的 CLI 参数：`--cwd`、`--model`、`--force`、`--no-sandbox`、`--no-auto-compact`、上下文相关参数等。\n\n### 4.3 `tui/App.tsx` — 终端 UI\n\n基于 **OpenTUI + React 19** 构建，功能包括：\n\n- 对话 transcript 滚动浏览\n- 斜杠命令菜单（输入 `/` 触发）\n- 模型选择器（支持 fast/thinking 偏好筛选）\n- Ctrl+C 取消运行 / 退出\n- API Key 安全输入\n\n斜杠命令定义在 `commands.ts`：\n\n```16:25:src/commands.ts\nexport const slashCommands: SlashCommand[] = [\n  { name: \"/help\", summary: \"查看可用命令\" },\n  { name: \"/local\", summary: \"使用本地项目\" },\n  { name: \"/model\", summary: \"切换模型\" },\n  { name: \"/compact\", summary: \"压缩上下文\" },\n  { name: \"/reset\", summary: \"重置会话\" },\n  { name: \"/set_apiKey\", summary: \"设置密钥，--save 保存\" },\n  { name: \"/exit\", summary: \"退出程序\" },\n  { name: \"/quit\", summary: \"退出程序\" },\n]\n```\n\n### 4.4 `ui.ts` — Web UI\n\n本地 HTTP 服务器（默认 `127.0.0.1` + 随机端口），主要能力：\n\n- **多项目 / 多会话管理**（侧边栏）\n- **会话持久化**到 `.session/sessions.json`\n- **实例锁**防止多个 UI 进程冲突\n- **Git 变更面板**（`git status` / `git diff --numstat`）\n- **SSE 流式响应**（`/api/run`、`/api/compact`）\n- 内嵌完整 SPA（`renderCodexAppHtml()`），无需额外前端构建\n\n主要 API 端点：\n\n| 端点 | 方法 | 功能 |\n|------|------|------|\n| `/api/status` | GET | 当前状态 |\n| `/api/models` | GET | 可用模型列表 |\n| `/api/changes` | GET | 工作区 Git 变更 |\n| `/api/run` | POST | 发送 prompt（SSE 流） |\n| `/api/compact` | POST | 手动压缩上下文 |\n| `/api/projects/*` | POST | 打开/选择项目 |\n| `/api/sessions/*` | POST/DELETE | 会话管理 |\n\nWeb UI 默认 **禁用 sandbox**（避免 PTY 工具挂起），TUI/CLI 则遵循环境变量或参数配置。\n\n---\n\n## 5. 技术栈\n\n| 层级 | 技术 |\n|------|------|\n| 语言 | TypeScript 6 (strict) |\n| 运行时 | Bun 1.3+ |\n| AI SDK | `@cursor/sdk` ^1.0.7 |\n| TUI | `@opentui/core` + `@opentui/react` + React 19 |\n| 构建 | `tsc` → ESM (`dist/`) |\n| 打包 | 自定义 `package-portable.mjs`（含 Bun runtime） |\n\n---\n\n## 6. 分发方式\n\n1. **npm 包**：`npm pack` → 全局安装 `code-agent` / `code-agent-ui`（仍需本机 Bun）\n2. **便携包**：`npm run package:portable` → 含 Bun + node_modules 的 tar.gz/zip\n   - 已预构建：`release/coding-agent-cli-0.1.0-darwin-arm64`、`win32-x64`\n   - 支持跨平台构建：`--target win32-x64`\n\n---\n\n## 7. 设计特点\n\n**优点：**\n- 单一核心类 `CodingAgentSession` 被 CLI/TUI/Web UI 共用，逻辑集中\n- 上下文压缩设计完整（自动触发、手动 `/compact`、失败 fallback、超限重试）\n- 三种 UI 覆盖不同使用场景（脚本管道、终端交互、浏览器）\n- 便携包方案降低部署门槛\n\n**可注意的点：**\n- `ui.ts` 单文件过大（HTML/CSS/JS 全内嵌），维护成本较高\n- 无单元测试\n- Cloud 模式目前仅支持 GitHub 远程\n- 强依赖 Bun，无法用 Node.js 直接运行 TUI\n\n---\n\n## 8. 快速上手\n\n```bash\npnpm install\nexport CURSOR_API_KEY=\"crsr_...\"\n\n# 一次性任务\nbun run dev -- \"分析本项目\"\n\n# 终端 TUI\nbun run dev\n\n# 浏览器 UI\nbun run dev:ui\n```\n\n---\n\n如果你想深入某一块（例如上下文压缩实现、Web UI API、便携包构建流程），可以说一下，我可以继续拆细讲。"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed grep"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] 已基本理解该项目。"
+            },
+            {
+              "kind": "activity",
+              "text": "[思考] "
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running glob"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] running read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed read"
+            },
+            {
+              "kind": "activity",
+              "text": "[工具] completed glob"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] status=finished duration=58.9s"
+            },
+            {
+              "kind": "meta",
+              "text": "[完成] 流式输出结束"
+            }
+          ],
+          "title": "分析本项目",
+          "updatedAt": 1782388934813
+        }
+      ]
+    }
+  ],
+  "selectedModel": {
+    "id": "composer-2"
+  }
+}
