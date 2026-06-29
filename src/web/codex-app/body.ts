@@ -89,9 +89,13 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 	                </label>
 	                <button class="guide-toggle" id="guideModeBtn" type="button" aria-pressed="false" title="引导纠正" hidden>引导</button>
 	                <div class="model-picker" id="modelPicker">
-	                  <select class="model-select" id="modelSelect" aria-label="选择模型">
+	                  <select class="model-select model-base-select" id="modelSelect" aria-label="选择模型">
 	                    <option value="">加载模型</option>
 	                  </select>
+	                  <button class="model-param-toggle" id="modelParamToggle" type="button" aria-expanded="false" aria-label="模型参数" title="模型参数" hidden>参数</button>
+	                  <div class="model-param-popover" id="modelParamPopover" role="dialog" aria-label="模型参数" hidden>
+	                    <div class="model-param-list" id="modelParamList"></div>
+	                  </div>
 	                </div>
 	                <button class="send primary" id="sendBtn" type="submit" aria-label="发送">↑</button>
 	              </div>

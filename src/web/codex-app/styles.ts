@@ -551,6 +551,7 @@ export const codexAppStyles = `    :root {
       grid-template-rows: 52px minmax(0, 1fr) auto;
       min-width: 0;
       min-height: 0;
+      overflow: hidden;
     }
 
     .topbar {
@@ -1237,6 +1238,9 @@ export const codexAppStyles = `    :root {
     .composer-wrap {
       position: relative;
       display: grid;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       justify-items: center;
       padding: 12px 22px 20px;
       background:
@@ -1313,6 +1317,9 @@ export const codexAppStyles = `    :root {
     .composer {
       display: grid;
       width: min(812px, 100%);
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       gap: 10px;
       border: 1px solid var(--border);
       border-radius: 22px;
@@ -1501,6 +1508,7 @@ export const codexAppStyles = `    :root {
 
     .composer-footer {
       display: flex;
+      min-width: 0;
       align-items: center;
       justify-content: flex-end;
       gap: 10px;
@@ -1622,6 +1630,9 @@ export const codexAppStyles = `    :root {
 	    .composer-actions {
 	      display: flex;
 	      width: auto;
+      min-width: 0;
+      flex: 1 1 auto;
+      flex-wrap: wrap;
 	      align-items: center;
 	      justify-content: flex-end;
 	      gap: 8px;
@@ -1665,11 +1676,16 @@ export const codexAppStyles = `    :root {
 	    }
 
     .model-picker {
-      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1 1 190px;
+      position: relative;
+      max-width: min(42vw, 320px);
+      min-width: 0;
     }
 
     .model-select {
-      width: clamp(126px, 16vw, 196px);
       min-height: 34px;
       border: 0;
       border-radius: 999px;
@@ -1679,6 +1695,141 @@ export const codexAppStyles = `    :root {
       font-weight: 620;
       padding: 0 12px;
       appearance: auto;
+    }
+
+    .model-base-select {
+      flex: 1 1 112px;
+      min-width: 0;
+      width: clamp(126px, 15vw, 190px);
+    }
+
+    .model-param-toggle {
+      display: inline-flex;
+      flex: 0 1 auto;
+      height: 34px;
+      min-height: 34px;
+      max-width: 132px;
+      align-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 720;
+      gap: 6px;
+      line-height: 1;
+      overflow: hidden;
+      padding: 0 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-param-toggle::after {
+      content: "⌄";
+      flex: 0 0 auto;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .model-param-toggle:hover:not(:disabled),
+    .model-param-toggle[aria-expanded="true"] {
+      background: color-mix(in srgb, var(--accent) 9%, var(--panel-soft));
+      color: var(--text);
+    }
+
+    .model-param-toggle[hidden] {
+      display: none;
+    }
+
+    .model-param-popover {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 10px);
+      z-index: 45;
+      width: min(420px, calc(100vw - 28px));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      padding: 12px;
+    }
+
+    .model-param-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .model-param-row {
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+    }
+
+    .model-param-name {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-param-segment {
+      display: flex;
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .model-param-choice,
+    .model-param-switch {
+      min-height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 720;
+      line-height: 1;
+    }
+
+    .model-param-choice {
+      padding: 0 9px;
+    }
+
+    .model-param-choice.active {
+      border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+      background: color-mix(in srgb, var(--accent) 14%, var(--panel-soft));
+      color: var(--text);
+    }
+
+    .model-param-switch {
+      display: inline-flex;
+      width: 52px;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 0 4px;
+    }
+
+    .model-param-switch::before {
+      content: "";
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform .14s ease, background .14s ease;
+    }
+
+    .model-param-switch.active {
+      border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+      background: color-mix(in srgb, var(--accent) 16%, var(--panel-soft));
+    }
+
+    .model-param-switch.active::before {
+      background: var(--accent);
+      transform: translateX(22px);
     }
 
     .guide-toggle {
@@ -2172,7 +2323,25 @@ export const codexAppStyles = `    :root {
         text-overflow: ellipsis;
       }
 
-      .model-select {
-        width: clamp(96px, 34vw, 148px);
+      .model-picker {
+        max-width: 54vw;
+      }
+
+      .model-base-select {
+        width: clamp(96px, 28vw, 148px);
+      }
+
+      .model-param-toggle {
+        max-width: 92px;
+        padding: 0 10px;
+      }
+
+      .model-param-popover {
+        right: -46px;
+        width: calc(100vw - 24px);
+      }
+
+      .model-param-row {
+        grid-template-columns: 70px minmax(0, 1fr);
       }
     }`

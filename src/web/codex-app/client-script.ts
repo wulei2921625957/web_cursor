@@ -30,6 +30,9 @@ export const codexAppClientScript = `    const els = {
       main: document.getElementById("main"),
 	      messages: document.getElementById("messages"),
 	      modelPicker: document.getElementById("modelPicker"),
+	      modelParamList: document.getElementById("modelParamList"),
+	      modelParamPopover: document.getElementById("modelParamPopover"),
+	      modelParamToggle: document.getElementById("modelParamToggle"),
 	      modelSelect: document.getElementById("modelSelect"),
 	      guideModeBtn: document.getElementById("guideModeBtn"),
 	      multiAgentMode: document.getElementById("multiAgentMode"),
@@ -426,6 +429,10 @@ export const codexAppClientScript = `    const els = {
       els.authStatus.classList.toggle("loading", authBusy)
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
 	      els.modelSelect.disabled = activeBusy || !modelsLoaded
+	      els.modelParamToggle.disabled = activeBusy || !modelsLoaded || els.modelParamToggle.hidden
+      for (const control of els.modelParamList.querySelectorAll("button")) {
+        control.disabled = activeBusy || !modelsLoaded
+      }
       els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
 	      els.prompt.disabled = !hasSession || !modelsLoaded
       els.attachmentBtn.disabled = !hasSession || !modelsLoaded
@@ -2918,7 +2925,12 @@ export const codexAppClientScript = `    const els = {
 
     function renderModelPicker() {
       const currentKey = modelSelectionKey(currentModel)
+      const keepParamPopoverOpen = !els.modelParamPopover.hidden
+      const groups = buildModelChoiceGroups(modelChoices)
+      const currentChoice = findModelChoice(modelChoices, currentModel)
+      const selectedGroupId = currentChoice?.value?.id || currentModel?.id || groups[0]?.id || ""
       els.modelSelect.textContent = ""
+      els.modelParamList.textContent = ""
 
       if (modelChoices.length === 0) {
         const option = document.createElement("option")
@@ -2926,25 +2938,290 @@ export const codexAppClientScript = `    const els = {
         option.textContent = state.modelsLoaded ? "没有可用模型" : "加载模型"
         option.selected = true
         els.modelSelect.appendChild(option)
+        els.modelParamToggle.hidden = true
+        setModelParamPopoverOpen(false)
         return
       }
 
-      if (currentKey && !findModelChoice(modelChoices, currentModel)) {
+      if (currentModel?.id && !groups.some((group) => group.id === currentModel.id)) {
         const option = document.createElement("option")
-        option.value = currentKey
-        option.textContent = currentKey
+        option.value = currentModel.id
+        option.textContent = currentModel.id
         option.selected = true
         els.modelSelect.appendChild(option)
       }
 
-      for (const choice of modelChoices) {
+      for (const group of groups) {
         const option = document.createElement("option")
-        option.value = modelSelectionKey(choice.value)
-        option.textContent = choice.label || option.value
-        option.title = choice.description || option.textContent
-        option.selected = option.value === currentKey
+        option.value = group.id
+        option.textContent = group.choices.length > 1 ? group.id + " (" + group.choices.length + ")" : group.id
+        option.title = group.id
+        option.selected = group.id === selectedGroupId
         els.modelSelect.appendChild(option)
       }
+
+      const selectedGroup = groups.find((group) => group.id === selectedGroupId)
+      let variantChoices = selectedGroup?.choices || (currentModel ? [{ label: currentKey, value: currentModel }] : [])
+      if (
+        currentKey &&
+        currentModel?.id === selectedGroupId &&
+        !variantChoices.some((choice) => modelSelectionKey(choice.value) === currentKey)
+      ) {
+        variantChoices = [{ label: currentKey, value: currentModel }, ...variantChoices]
+      }
+      renderModelParamControls(variantChoices, currentKey, keepParamPopoverOpen)
+    }
+
+    function buildModelChoiceGroups(choices) {
+      const byId = new Map()
+
+      for (const choice of choices) {
+        const id = choice?.value?.id || ""
+        if (!id) continue
+        if (!byId.has(id)) {
+          byId.set(id, { id, choices: [] })
+        }
+        byId.get(id).choices.push(choice)
+      }
+
+      return Array.from(byId.values())
+    }
+
+    function renderModelParamControls(choices, currentKey, keepOpen) {
+      els.modelParamList.textContent = ""
+      const activeChoice =
+        choices.find((choice) => modelSelectionKey(choice.value) === currentKey) ||
+        choices[0]
+      const stats = collectVariantParamStats(choices)
+      const paramIds = orderedParamIds(
+        Array.from(stats.entries())
+          .filter((entry) => entry[1].values.length > 1)
+          .map((entry) => entry[0])
+      )
+
+      els.modelParamToggle.hidden = paramIds.length === 0
+      if (paramIds.length === 0 || !activeChoice) {
+        setModelParamPopoverOpen(false)
+        return
+      }
+
+      const activeParams = modelParamMap(activeChoice.value)
+      els.modelParamToggle.textContent = modelParamSummary(activeChoice.value, paramIds)
+
+      for (const paramId of paramIds) {
+        appendModelParamRow(paramId, stats.get(paramId).values, activeParams)
+      }
+
+      setModelParamPopoverOpen(keepOpen)
+    }
+
+    function collectVariantParamStats(choices) {
+      const stats = new Map()
+
+      for (const choice of choices) {
+        for (const param of choice.value?.params || []) {
+          const id = String(param.id)
+          if (!stats.has(id)) {
+            stats.set(id, { values: [], valueSet: new Set() })
+          }
+          addParamValue(stats.get(id), String(param.value))
+        }
+      }
+
+      for (const [id, stat] of stats.entries()) {
+        if (choices.some((choice) => modelParamValue(choice.value, id) === "")) {
+          addParamValue(stat, "")
+        }
+        stat.values = sortModelParamValues(id, stat.values)
+      }
+
+      return stats
+    }
+
+    function addParamValue(stat, value) {
+      if (stat.valueSet.has(value)) return
+      stat.valueSet.add(value)
+      stat.values.push(value)
+    }
+
+    function appendModelParamRow(paramId, values, activeParams) {
+      const row = document.createElement("div")
+      row.className = "model-param-row"
+
+      const name = document.createElement("div")
+      name.className = "model-param-name"
+      name.textContent = modelParamName(paramId)
+      row.appendChild(name)
+
+      const options = document.createElement("div")
+      options.className = "model-param-segment"
+      const activeValue = activeParams.get(paramId) || ""
+
+      if (isBooleanParamValues(values)) {
+        const button = document.createElement("button")
+        const nextValue = activeValue === "true" ? "false" : "true"
+        button.type = "button"
+        button.className = "model-param-switch" + (activeValue === "true" ? " active" : "")
+        button.setAttribute("aria-pressed", activeValue === "true" ? "true" : "false")
+        button.setAttribute("aria-label", modelParamName(paramId) + " " + formatModelParamValue(activeValue))
+        button.title = formatModelParam({ id: paramId, value: activeValue })
+        button.addEventListener("click", () => {
+          selectModelParamValue(paramId, nextValue)
+        })
+        options.appendChild(button)
+      } else {
+        for (const value of values) {
+          const button = document.createElement("button")
+          button.type = "button"
+          button.className = "model-param-choice" + (value === activeValue ? " active" : "")
+          button.textContent = formatModelParamValue(value)
+          button.title = formatModelParam({ id: paramId, value })
+          button.setAttribute("aria-pressed", value === activeValue ? "true" : "false")
+          button.addEventListener("click", () => {
+            selectModelParamValue(paramId, value)
+          })
+          options.appendChild(button)
+        }
+      }
+
+      row.appendChild(options)
+      els.modelParamList.appendChild(row)
+    }
+
+    function selectModelParamValue(paramId, value) {
+      if (isActiveSessionRunning()) return
+      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === els.modelSelect.value)
+      if (!group) return
+
+      const currentKey = modelSelectionKey(currentModel)
+      const activeChoice =
+        group.choices.find((choice) => modelSelectionKey(choice.value) === currentKey) ||
+        group.choices[0]
+      const nextChoice = findClosestModelParamChoice(group.choices, activeChoice.value, paramId, value)
+      if (nextChoice && modelSelectionKey(nextChoice.value) !== currentKey) {
+        void selectModel(nextChoice.value)
+      }
+    }
+
+    function findClosestModelParamChoice(choices, currentValue, paramId, value) {
+      const desired = modelParamMap(currentValue)
+      if (value) {
+        desired.set(paramId, value)
+      } else {
+        desired.delete(paramId)
+      }
+
+      let bestChoice = null
+      let bestScore = -Infinity
+
+      for (let index = 0; index < choices.length; index += 1) {
+        const choice = choices[index]
+        const params = modelParamMap(choice.value)
+        if ((params.get(paramId) || "") !== value) {
+          continue
+        }
+
+        let score = -index / 1000
+        for (const [id, desiredValue] of desired.entries()) {
+          const actualValue = params.get(id) || ""
+          score += actualValue === desiredValue ? 4 : -2
+        }
+        for (const id of params.keys()) {
+          if (!desired.has(id) && id !== paramId) {
+            score -= 1
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score
+          bestChoice = choice
+        }
+      }
+
+      return bestChoice
+    }
+
+    function setModelParamPopoverOpen(open) {
+      const shouldOpen = Boolean(open) && !els.modelParamToggle.hidden
+      els.modelParamPopover.hidden = !shouldOpen
+      els.modelParamToggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false")
+    }
+
+    function modelParamSummary(model, paramIds) {
+      const params = modelParamMap(model)
+      const values = paramIds
+        .map((id) => params.get(id) || "")
+        .filter(Boolean)
+        .slice(0, 2)
+
+      return values.length > 0 ? values.join(" · ") : "参数"
+    }
+
+    function isBooleanParamValues(values) {
+      return values.length === 2 && values.includes("true") && values.includes("false")
+    }
+
+    function orderedParamIds(ids) {
+      const priority = ["context", "reasoning", "effort", "thinking", "fast", "cyber"]
+      return ids.slice().sort((left, right) => {
+        const leftIndex = priority.indexOf(String(left))
+        const rightIndex = priority.indexOf(String(right))
+        const normalizedLeft = leftIndex === -1 ? priority.length : leftIndex
+        const normalizedRight = rightIndex === -1 ? priority.length : rightIndex
+        return normalizedLeft - normalizedRight || String(left).localeCompare(String(right))
+      })
+    }
+
+    function sortModelParamValues(paramId, values) {
+      const priorityByParam = {
+        context: ["200k", "272k", "300k", "1m"],
+        reasoning: ["none", "low", "medium", "high", "extra-high", "xhigh", "max"],
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        thinking: ["false", "true"],
+        fast: ["false", "true"],
+        cyber: ["false", "true"],
+      }
+      const priority = priorityByParam[paramId] || []
+      return values.slice().sort((left, right) => {
+        if (left === "") return -1
+        if (right === "") return 1
+        const leftIndex = priority.indexOf(left)
+        const rightIndex = priority.indexOf(right)
+        const normalizedLeft = leftIndex === -1 ? priority.length : leftIndex
+        const normalizedRight = rightIndex === -1 ? priority.length : rightIndex
+        return normalizedLeft - normalizedRight || String(left).localeCompare(String(right), undefined, { numeric: true })
+      })
+    }
+
+    function modelParamMap(model) {
+      return new Map((model?.params || []).map((param) => [String(param.id), String(param.value)]))
+    }
+
+    function modelParamValue(model, paramId) {
+      return modelParamMap(model).get(paramId) || ""
+    }
+
+    function modelParamName(paramId) {
+      const names = {
+        context: "上下文",
+        reasoning: "推理",
+        effort: "强度",
+        thinking: "思考",
+        fast: "快速",
+        cyber: "Cyber",
+      }
+      return names[paramId] || paramId
+    }
+
+    function formatModelParamValue(value) {
+      if (value === "") return "默认"
+      if (value === "true") return "开"
+      if (value === "false") return "关"
+      return String(value).replace(/-/g, " ")
+    }
+
+    function formatModelParam(param) {
+      return String(param.id) + "=" + formatModelParamValue(String(param.value))
     }
 
     async function selectModel(model) {
@@ -3634,9 +3911,34 @@ export const codexAppClientScript = `    const els = {
     })
 
     els.modelSelect.addEventListener("change", () => {
-      const choice = modelChoices.find((item) => modelSelectionKey(item.value) === els.modelSelect.value)
+      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === els.modelSelect.value)
+      const currentKey = modelSelectionKey(currentModel)
+      const choice =
+        group?.choices.find((item) => modelSelectionKey(item.value) === currentKey) ||
+        group?.choices[0]
       if (choice) {
         void selectModel(choice.value)
+      }
+    })
+
+    els.modelParamToggle.addEventListener("click", (event) => {
+      event.stopPropagation()
+      setModelParamPopoverOpen(els.modelParamPopover.hidden)
+    })
+
+    els.modelParamPopover.addEventListener("click", (event) => {
+      event.stopPropagation()
+    })
+
+    document.addEventListener("click", (event) => {
+      if (!els.modelPicker.contains(event.target)) {
+        setModelParamPopoverOpen(false)
+      }
+    })
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        setModelParamPopoverOpen(false)
       }
     })
 
