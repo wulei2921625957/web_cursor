@@ -2954,7 +2954,7 @@ export const codexAppClientScript = `    const els = {
       for (const group of groups) {
         const option = document.createElement("option")
         option.value = group.id
-        option.textContent = group.choices.length > 1 ? group.id + " (" + group.choices.length + ")" : group.id
+        option.textContent = group.id
         option.title = group.id
         option.selected = group.id === selectedGroupId
         els.modelSelect.appendChild(option)

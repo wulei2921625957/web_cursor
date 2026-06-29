@@ -1138,6 +1138,9 @@ function inferModelContextInfo(model: ModelSelection | SDKModel | null | undefin
   if (!model) return { source: "unknown" }
 
   const record = model as unknown as Record<string, unknown>
+  const paramTokens = inferContextTokensFromModelParams(record.params)
+  if (paramTokens) return { source: "catalog", tokens: paramTokens }
+
   const catalogTokens = firstPositiveInteger([
     record.contextWindowTokens,
     record.contextWindow,
@@ -1161,6 +1164,28 @@ function inferModelContextInfo(model: ModelSelection | SDKModel | null | undefin
   if (idTokens) return { source: "model-id", tokens: idTokens }
 
   return { source: "unknown" }
+}
+
+function inferContextTokensFromModelParams(params: unknown) {
+  if (!Array.isArray(params)) return 0
+
+  const contextParam = params.find((param) => {
+    if (!param || typeof param !== "object") return false
+    return (param as { id?: unknown }).id === "context"
+  }) as { value?: unknown } | undefined
+
+  if (contextParam) {
+    const tokens = inferContextTokensFromText([`context ${contextParam.value}`])
+    if (tokens) return tokens
+  }
+
+  return inferContextTokensFromText(
+    params.map((param) => {
+      if (!param || typeof param !== "object") return ""
+      const item = param as { id?: unknown; value?: unknown }
+      return `${item.id || ""} ${item.value || ""}`
+    })
+  )
 }
 
 function inferContextTokensFromText(values: unknown[]) {
