@@ -1,5 +1,8 @@
 export const codexAppClientScript = `    const els = {
       appShell: document.querySelector(".app-shell"),
+      attachmentBtn: document.getElementById("attachmentBtn"),
+      attachmentInput: document.getElementById("attachmentInput"),
+      attachmentList: document.getElementById("attachmentList"),
       authApiKey: document.getElementById("authApiKey"),
       authForm: document.getElementById("authForm"),
       authSaveKey: document.getElementById("authSaveKey"),
@@ -66,17 +69,27 @@ export const codexAppClientScript = `    const els = {
 	    const messagesBySession = Object.create(null)
 	    let authBusy = false
     const streamingAssistants = new Map()
+    const streamingAssistantQueues = new Map()
     const streamingMultiRuns = new Map()
     const streamingRunTimers = new Map()
     const persistMessagesTimers = new Map()
+    const ASSISTANT_STREAM_FRAME_MS = 32
+    const ASSISTANT_STREAM_MAX_CHUNK = 96
+    const ASSISTANT_STREAM_MIN_CHUNK = 18
+    const MAX_ATTACHMENTS = 8
+    const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+    const MAX_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
     const MESSAGES_BOTTOM_THRESHOLD = 72
     let messagesAutoFollow = true
+    let scheduledMessagesRender = 0
     let scrollingToBottom = false
     const openActivityGroups = new Set()
     let latestChanges = { available: false, files: [], message: "请先打开项目。" }
     let selectedChangePath = ""
     let modelChoices = []
     let currentModel = null
+    let pendingAttachments = []
+    let attachmentIdCounter = 0
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
@@ -308,12 +321,15 @@ export const codexAppClientScript = `    const els = {
 	      els.modelSelect.disabled = activeBusy || !modelsLoaded
 	      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
 	      els.prompt.disabled = activeBusy || !hasSession || !modelsLoaded
+      els.attachmentBtn.disabled = activeBusy || !hasSession || !modelsLoaded
       els.sendBtn.classList.toggle("running", activeBusy)
       els.sendBtn.textContent = activeBusy ? "" : "↑"
       els.sendBtn.setAttribute("aria-label", activeBusy ? "取消任务" : "发送")
       els.sendBtn.title = activeBusy ? "取消任务" : "发送"
       els.sendBtn.disabled =
-        !hasSession || !modelsLoaded || (!activeBusy && !els.prompt.value.trim())
+        !hasSession ||
+        !modelsLoaded ||
+        (!activeBusy && !els.prompt.value.trim() && pendingAttachments.length === 0)
       els.openProjectBtn.disabled = busy
       els.useLaunchCwdBtn.disabled = busy || !state.launchCwd
       els.authSubmitBtn.disabled = authBusy || busy || !els.authApiKey.value.trim()
@@ -638,6 +654,142 @@ export const codexAppClientScript = `    const els = {
       els.prompt.style.height = nextHeight + "px"
     }
 
+    function addAttachmentFiles(fileList) {
+      if (!state.activeSessionId || !state.modelsLoaded || isActiveSessionRunning()) {
+        setToast(els.projectToast, "请先打开项目、新建会话并等待当前任务结束后再添加附件。", true)
+        return
+      }
+
+      const files = Array.from(fileList || [])
+      if (files.length === 0) return
+
+      const next = pendingAttachments.slice()
+      let totalBytes = next.reduce((sum, item) => sum + item.file.size, 0)
+      const rejected = []
+
+      for (const file of files) {
+        if (next.length >= MAX_ATTACHMENTS) {
+          rejected.push(file.name + "：最多 " + MAX_ATTACHMENTS + " 个附件")
+          continue
+        }
+
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          rejected.push(file.name + "：单文件超过 " + formatFileSize(MAX_ATTACHMENT_BYTES))
+          continue
+        }
+
+        if (totalBytes + file.size > MAX_ATTACHMENTS_TOTAL_BYTES) {
+          rejected.push(file.name + "：附件总大小超过 " + formatFileSize(MAX_ATTACHMENTS_TOTAL_BYTES))
+          continue
+        }
+
+        const duplicate = next.some(
+          (item) =>
+            item.file.name === file.name &&
+            item.file.size === file.size &&
+            item.file.lastModified === file.lastModified
+        )
+        if (duplicate) continue
+
+        next.push({ file, id: "attachment-" + ++attachmentIdCounter })
+        totalBytes += file.size
+      }
+
+      pendingAttachments = next
+      renderAttachmentList()
+      updateControls()
+
+      if (rejected.length > 0) {
+        setToast(els.projectToast, rejected.slice(0, 2).join("；"), true)
+      }
+    }
+
+    function renderAttachmentList() {
+      els.attachmentList.textContent = ""
+      els.attachmentList.hidden = pendingAttachments.length === 0
+
+      for (const item of pendingAttachments) {
+        const chip = document.createElement("div")
+        chip.className = "attachment-chip"
+
+        const name = document.createElement("span")
+        name.className = "attachment-name"
+        name.textContent = item.file.name || "未命名文件"
+        name.title = name.textContent
+
+        const size = document.createElement("span")
+        size.className = "attachment-size"
+        size.textContent = formatFileSize(item.file.size)
+
+        const remove = document.createElement("button")
+        remove.className = "attachment-remove"
+        remove.type = "button"
+        remove.textContent = "×"
+        remove.setAttribute("aria-label", "移除附件 " + name.textContent)
+        remove.addEventListener("click", () => {
+          pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
+          renderAttachmentList()
+          updateControls()
+        })
+
+        chip.appendChild(name)
+        chip.appendChild(size)
+        chip.appendChild(remove)
+        els.attachmentList.appendChild(chip)
+      }
+    }
+
+    function clearPendingAttachments() {
+      pendingAttachments = []
+      if (els.attachmentInput) els.attachmentInput.value = ""
+      renderAttachmentList()
+      updateControls()
+    }
+
+    async function buildAttachmentPayload() {
+      const files = []
+      for (const item of pendingAttachments) {
+        const buffer = await item.file.arrayBuffer()
+        files.push({
+          dataBase64: arrayBufferToBase64(buffer),
+          lastModified: item.file.lastModified || 0,
+          name: item.file.name || "attachment",
+          size: item.file.size || buffer.byteLength,
+          type: item.file.type || "",
+        })
+      }
+      return files
+    }
+
+    function formatUserMessageWithAttachments(prompt, attachments) {
+      const text = prompt.trim()
+      if (!attachments || attachments.length === 0) return text
+
+      const lines = attachments.map((item) => {
+        const file = item.file
+        return "- " + (file.name || "attachment") + " (" + formatFileSize(file.size) + ")"
+      })
+      return [text || "请查看附件。", "", "附件：", ...lines].join("\\n")
+    }
+
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer)
+      let binary = ""
+      const chunkSize = 0x8000
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        const chunk = bytes.subarray(index, index + chunkSize)
+        binary += String.fromCharCode.apply(null, Array.from(chunk))
+      }
+      return window.btoa(binary)
+    }
+
+    function formatFileSize(size) {
+      const value = Number(size) || 0
+      if (value < 1024) return value + " B"
+      if (value < 1024 * 1024) return (value / 1024).toFixed(value < 10 * 1024 ? 1 : 0) + " KB"
+      return (value / (1024 * 1024)).toFixed(value < 10 * 1024 * 1024 ? 1 : 0) + " MB"
+    }
+
     function finishMessagesRender(shouldFollow, previousScrollTop) {
       if (shouldFollow) {
         scrollMessagesToBottom()
@@ -647,6 +799,23 @@ export const codexAppClientScript = `    const els = {
       const maxScrollTop = Math.max(0, els.messages.scrollHeight - els.messages.clientHeight)
       els.messages.scrollTop = Math.min(previousScrollTop, maxScrollTop)
       updateMessagesAutoFollow()
+    }
+
+    function scheduleMessagesRender() {
+      if (scheduledMessagesRender) return
+
+      const schedule =
+        typeof window.requestAnimationFrame === "function"
+          ? window.requestAnimationFrame.bind(window)
+          : (callback) => window.setTimeout(callback, ASSISTANT_STREAM_FRAME_MS)
+      scheduledMessagesRender = schedule(() => {
+        scheduledMessagesRender = 0
+        renderMessages()
+      })
+    }
+
+    function renderMessagesForSession(sessionId) {
+      if (sessionId === state.activeSessionId) scheduleMessagesRender()
     }
 
     function renderMessages() {
@@ -722,12 +891,64 @@ export const codexAppClientScript = `    const els = {
 	      if (message.kind === "assistant") {
 	        node.className = "message assistant markdown"
         renderMarkdownInto(node, message.text)
+      } else if (message.kind === "user") {
+        node.className = "message user"
+        renderUserMessageInto(node, message.text)
       } else {
         node.className = "message " + message.kind
         node.textContent = message.text
 	      }
 	      els.messages.appendChild(node)
 	    }
+
+    function renderUserMessageInto(node, text) {
+      const parsed = parseUserAttachmentMessage(text)
+      if (!parsed) {
+        node.textContent = text
+        return
+      }
+
+      const body = document.createElement("div")
+      body.className = "user-message-text"
+      body.textContent = parsed.text
+      node.appendChild(body)
+
+      const panel = document.createElement("div")
+      panel.className = "user-attachments"
+
+      const title = document.createElement("div")
+      title.className = "user-attachments-title"
+      title.textContent = "附件："
+      panel.appendChild(title)
+
+      const list = document.createElement("div")
+      list.className = "user-attachments-list"
+      for (const attachment of parsed.attachments) {
+        const item = document.createElement("div")
+        item.className = "user-attachment-item"
+        item.textContent = attachment
+        list.appendChild(item)
+      }
+      panel.appendChild(list)
+      node.appendChild(panel)
+    }
+
+    function parseUserAttachmentMessage(text) {
+      const value = String(text || "")
+      const marker = "\\n\\n附件：\\n"
+      const markerIndex = value.lastIndexOf(marker)
+      if (markerIndex < 0) return null
+
+      const body = value.slice(0, markerIndex).trim()
+      const attachmentText = value.slice(markerIndex + marker.length)
+      const attachments = attachmentText
+        .split("\\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+
+      if (attachments.length === 0) return null
+      return { attachments, text: body || "请查看附件。" }
+    }
 
 	    function appendMultiAgentRun(message) {
 	      let run
@@ -1322,8 +1543,8 @@ export const codexAppClientScript = `    const els = {
 
     function formatToolGroup(group) {
       const count = group.count > 1 ? " ×" + group.count : ""
-      const detail = group.detail && group.level !== "normal" ? " · " + group.detail : ""
-      return formatToolStatusText(group.status) + formatToolActionName(group.name, group.detail) + count + detail
+      const detail = group.detail ? " · " + formatToolDetail(group.detail) : ""
+      return formatToolStatusText(group.status) + formatToolActionName(group.name, group.detail, true) + count + detail
     }
 
     function formatToolStatusText(status) {
@@ -1335,7 +1556,7 @@ export const codexAppClientScript = `    const els = {
       return value ? value + " " : ""
     }
 
-    function formatToolActionName(name, detail) {
+    function formatToolActionName(name, detail, includeUnknownName) {
       const key = [name, detail].map((value) => String(value || "").toLowerCase()).join(" ")
       if (key.includes("grep") || key.includes("search")) return "搜索代码"
       if (key.includes("read")) return "读取文件"
@@ -1344,7 +1565,62 @@ export const codexAppClientScript = `    const els = {
       if (key.includes("shell") || key.includes("terminal") || key.includes("command") || key.includes("exec")) {
         return "运行命令"
       }
-      return "调用工具"
+      const unknownName = includeUnknownName ? formatUnknownToolName(name) : ""
+      return unknownName ? "调用工具 " + unknownName : "调用工具"
+    }
+
+    function formatUnknownToolName(name) {
+      const value = compactText(name)
+      return value ? value : ""
+    }
+
+    function formatToolDetail(detail) {
+      const value = String(detail || "")
+        .replace(/^·+\\s*/, "")
+        .replace(/\\s*=>\\s*/g, " => ")
+        .trim()
+      return shortenInline(formatStructuredToolDetail(value) || value, 260)
+    }
+
+    function formatStructuredToolDetail(detail) {
+      const normalized = String(detail || "")
+        .replace(/\\\\?"/g, '"')
+        .replace(/\\\\n/g, " ")
+        .replace(/\\\\r/g, " ")
+        .replace(/\\\\t/g, " ")
+      const fieldLabels = [
+        ["path", "path"],
+        ["filePath", "path"],
+        ["target_file", "path"],
+        ["absolutePath", "path"],
+        ["root", "root"],
+        ["cwd", "cwd"],
+        ["working_directory", "cwd"],
+        ["pattern", "pattern"],
+        ["query", "query"],
+        ["command", "cmd"],
+        ["cmd", "cmd"],
+        ["tool", "tool"],
+        ["name", "name"],
+      ]
+      const parts = []
+      const seenLabels = new Set()
+
+      for (const [key, label] of fieldLabels) {
+        if (seenLabels.has(label)) continue
+        const value = findJsonStringField(normalized, key)
+        if (!value) continue
+        seenLabels.add(label)
+        parts.push(label + "=" + value)
+      }
+
+      return parts.join(" · ")
+    }
+
+    function findJsonStringField(text, key) {
+      const pattern = new RegExp('"' + String(key || "") + '"\\\\s*:\\\\s*"([^"]+)"')
+      const match = pattern.exec(text)
+      return match ? compactText(match[1]) : ""
     }
 
     function summarizeActivityEntries(entries, toolGroups) {
@@ -1495,12 +1771,94 @@ export const codexAppClientScript = `    const els = {
       const targetSessionId = sessionId || state.activeSessionId
       const messages = activeMessages(targetSessionId)
       messages.push({ kind, text })
-      if (targetSessionId === state.activeSessionId) renderMessages()
+      renderMessagesForSession(targetSessionId)
       schedulePersistMessages(targetSessionId)
     }
 
     function appendMeta(text, isError, sessionId) {
       appendMessage(isError ? "meta error" : "meta", text, sessionId)
+    }
+
+    function enqueueAssistantText(sessionId, message, text) {
+      if (!sessionId || !message || !text) return
+
+      let queue = streamingAssistantQueues.get(sessionId)
+      if (!queue || queue.message !== message) {
+        if (queue && queue.timer) window.clearTimeout(queue.timer)
+        queue = { message, pending: "", timer: 0 }
+        streamingAssistantQueues.set(sessionId, queue)
+      }
+
+      queue.pending += String(text)
+      pumpAssistantText(sessionId)
+    }
+
+    function pumpAssistantText(sessionId) {
+      const queue = streamingAssistantQueues.get(sessionId)
+      if (!queue || queue.timer || !queue.pending) return
+
+      queue.timer = window.setTimeout(() => {
+        queue.timer = 0
+        const nextText = takeAssistantTextChunk(queue.pending)
+        queue.pending = queue.pending.slice(nextText.length)
+        queue.message.text += nextText
+        renderMessagesForSession(sessionId)
+        schedulePersistMessages(sessionId)
+
+        if (queue.pending) {
+          pumpAssistantText(sessionId)
+        }
+      }, ASSISTANT_STREAM_FRAME_MS)
+    }
+
+    function takeAssistantTextChunk(text) {
+      const value = String(text || "")
+      if (value.length <= ASSISTANT_STREAM_MAX_CHUNK) return value
+
+      const newlineIndex = value.indexOf("\\n")
+      if (
+        newlineIndex >= ASSISTANT_STREAM_MIN_CHUNK &&
+        newlineIndex <= ASSISTANT_STREAM_MAX_CHUNK
+      ) {
+        return value.slice(0, newlineIndex + 1)
+      }
+
+      const punctuationMatch = /[。！？.!?]\\s/.exec(value.slice(0, ASSISTANT_STREAM_MAX_CHUNK))
+      if (punctuationMatch && punctuationMatch.index >= ASSISTANT_STREAM_MIN_CHUNK) {
+        return value.slice(0, punctuationMatch.index + punctuationMatch[0].length)
+      }
+
+      const dynamicChunk = Math.min(
+        ASSISTANT_STREAM_MAX_CHUNK,
+        Math.max(ASSISTANT_STREAM_MIN_CHUNK, Math.ceil(value.length / 24))
+      )
+      return value.slice(0, dynamicChunk)
+    }
+
+    function flushAssistantQueue(sessionId, shouldRender) {
+      const queue = streamingAssistantQueues.get(sessionId)
+      if (!queue) return
+
+      if (queue.timer) {
+        window.clearTimeout(queue.timer)
+      }
+      if (queue.pending) {
+        queue.message.text += queue.pending
+        queue.pending = ""
+        schedulePersistMessages(sessionId)
+      }
+      streamingAssistantQueues.delete(sessionId)
+      if (shouldRender) renderMessagesForSession(sessionId)
+    }
+
+    function clearAssistantQueue(sessionId) {
+      const queue = streamingAssistantQueues.get(sessionId)
+      if (!queue) return
+
+      if (queue.timer) {
+        window.clearTimeout(queue.timer)
+      }
+      streamingAssistantQueues.delete(sessionId)
     }
 
 	    function appendAssistant(text, sessionId) {
@@ -1512,9 +1870,7 @@ export const codexAppClientScript = `    const els = {
         streamingAssistants.set(targetSessionId, streamingAssistant)
 	        messages.push(streamingAssistant)
       }
-      streamingAssistant.text += text
-      if (targetSessionId === state.activeSessionId) renderMessages()
-	      schedulePersistMessages(targetSessionId)
+      enqueueAssistantText(targetSessionId, streamingAssistant, text)
 	    }
 
 	    function updateMultiAgentRun(run, sessionId) {
@@ -1527,7 +1883,7 @@ export const codexAppClientScript = `    const els = {
 	        messages.push(streamingMultiRun)
 	      }
 	      streamingMultiRun.text = JSON.stringify(run || {})
-      if (targetSessionId === state.activeSessionId) renderMessages()
+      renderMessagesForSession(targetSessionId)
 	      schedulePersistMessages(targetSessionId)
 	    }
 
@@ -1600,9 +1956,7 @@ export const codexAppClientScript = `    const els = {
         streamingRunTimer.message.text = nextText
       }
 
-      if (sessionId === state.activeSessionId && (changed || persist)) {
-        renderMessages()
-      }
+      if (changed || persist) renderMessagesForSession(sessionId)
       if (persist) {
         schedulePersistMessages(sessionId)
       }
@@ -1610,12 +1964,16 @@ export const codexAppClientScript = `    const els = {
 
     function resetStreamingState(sessionId) {
       if (!sessionId) {
+        for (const queuedSessionId of Array.from(streamingAssistantQueues.keys())) {
+          clearAssistantQueue(queuedSessionId)
+        }
         streamingAssistants.clear()
         streamingMultiRuns.clear()
         discardRunTimer()
         return
       }
 
+      clearAssistantQueue(sessionId)
       streamingAssistants.delete(sessionId)
       streamingMultiRuns.delete(sessionId)
       discardRunTimer(sessionId)
@@ -2267,6 +2625,7 @@ export const codexAppClientScript = `    const els = {
 	        return
 	      }
 	      if (payload.type === "error") {
+          flushAssistantQueue(sessionId, true)
           finishRunTimer(sessionId)
           setLocalSessionRunning(sessionId, false)
 	        appendMeta("[错误] " + payload.message, true, sessionId)
@@ -2278,6 +2637,7 @@ export const codexAppClientScript = `    const els = {
 	        return
 	      }
       if (payload.type === "finished") {
+        flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
         setLocalSessionRunning(sessionId, false)
         streamingAssistants.delete(sessionId)
@@ -2290,6 +2650,7 @@ export const codexAppClientScript = `    const els = {
       try {
 	        const result = await postJson("/api/projects/open", { cwd: path })
 	        resetStreamingState()
+        clearPendingAttachments()
 	        messagesAutoFollow = true
 	        applyState(result)
         setToast(els.projectToast, result.message || "项目已打开。")
@@ -2317,6 +2678,7 @@ export const codexAppClientScript = `    const els = {
 	        }
 
 	        resetStreamingState()
+        clearPendingAttachments()
 	        messagesAutoFollow = true
 	        applyState(result)
         setToast(els.projectToast, result.message || "项目已打开。")
@@ -2331,6 +2693,7 @@ export const codexAppClientScript = `    const els = {
       try {
 	        const result = await postJson("/api/projects/select", { projectId })
 	        resetStreamingState()
+        clearPendingAttachments()
 	        messagesAutoFollow = true
 	        applyState(result)
         await refreshModels().catch(() => {})
@@ -2344,6 +2707,7 @@ export const codexAppClientScript = `    const els = {
       try {
 	        const result = await postJson("/api/sessions/select", { sessionId })
 	        if (!isSessionRunning(sessionId)) resetStreamingState(sessionId)
+        clearPendingAttachments()
 	        messagesAutoFollow = true
 	        applyState(result)
         await refreshModels().catch(() => {})
@@ -2413,6 +2777,7 @@ export const codexAppClientScript = `    const els = {
 		        const result = await postJson("/api/sessions")
 		        applyState(result)
 	        resetStreamingState(result.activeSessionId)
+        clearPendingAttachments()
 	        messagesAutoFollow = true
 	        messagesBySession[result.activeSessionId] = []
         appendMeta("[新会话] " + result.message)
@@ -2447,6 +2812,13 @@ export const codexAppClientScript = `    const els = {
     })
 
     els.openProjectBtn.addEventListener("click", pickProject)
+    els.attachmentBtn.addEventListener("click", () => {
+      if (!els.attachmentBtn.disabled) els.attachmentInput.click()
+    })
+    els.attachmentInput.addEventListener("change", () => {
+      addAttachmentFiles(els.attachmentInput.files)
+      els.attachmentInput.value = ""
+    })
 
     els.useLaunchCwdBtn.addEventListener("click", () => {
       if (state.launchCwd) {
@@ -2524,6 +2896,25 @@ export const codexAppClientScript = `    const els = {
       renderChanges(latestChanges)
     })
 
+    els.composer.addEventListener("dragover", (event) => {
+      if (!event.dataTransfer || event.dataTransfer.types.indexOf("Files") === -1) return
+      event.preventDefault()
+      els.composer.classList.add("drag-over")
+    })
+
+    els.composer.addEventListener("dragleave", (event) => {
+      if (!els.composer.contains(event.relatedTarget)) {
+        els.composer.classList.remove("drag-over")
+      }
+    })
+
+    els.composer.addEventListener("drop", (event) => {
+      if (!event.dataTransfer || event.dataTransfer.files.length === 0) return
+      event.preventDefault()
+      els.composer.classList.remove("drag-over")
+      addAttachmentFiles(event.dataTransfer.files)
+    })
+
     els.composer.addEventListener("submit", async (event) => {
       event.preventDefault()
       if (isActiveSessionRunning()) {
@@ -2532,12 +2923,26 @@ export const codexAppClientScript = `    const els = {
       }
 
       const prompt = els.prompt.value.trim()
-      if (!prompt || !state.activeSessionId) return
+      const attachmentSnapshot = pendingAttachments.slice()
+      if ((!prompt && attachmentSnapshot.length === 0) || !state.activeSessionId) return
 	      const runSessionId = state.activeSessionId
+      let attachments = []
+
+      try {
+        attachments = await buildAttachmentPayload()
+      } catch (error) {
+        appendMeta("[错误] 附件读取失败：" + error.message, true, runSessionId)
+        return
+      }
 
 	      messagesAutoFollow = true
-	      appendMessage("user", prompt, runSessionId)
+	      appendMessage(
+        "user",
+        formatUserMessageWithAttachments(prompt, attachmentSnapshot),
+        runSessionId
+      )
 	      els.prompt.value = ""
+      clearPendingAttachments()
 	      resizePrompt()
 	      resetStreamingState(runSessionId)
       setLocalSessionRunning(runSessionId, true)
@@ -2549,13 +2954,16 @@ export const codexAppClientScript = `    const els = {
 
 	      try {
 	        await streamPost("/api/run", {
+            attachments,
             sessionId: runSessionId,
-	          prompt,
+	          prompt: prompt || "请查看附件。",
 	          multiAgent: els.multiAgentMode.checked,
 	        }, (payload) => handleStreamEvent(payload, runSessionId))
 	      } catch (error) {
+        flushAssistantQueue(runSessionId, true)
         appendMeta("[错误] " + error.message, true, runSessionId)
 	      } finally {
+        flushAssistantQueue(runSessionId, true)
         finishRunTimer(runSessionId)
         streamingAssistants.delete(runSessionId)
         streamingMultiRuns.delete(runSessionId)
@@ -2568,6 +2976,13 @@ export const codexAppClientScript = `    const els = {
     els.prompt.addEventListener("input", () => {
       resizePrompt()
       updateControls()
+    })
+    els.prompt.addEventListener("paste", (event) => {
+      const files = event.clipboardData && event.clipboardData.files
+      if (!files || files.length === 0) return
+
+      event.preventDefault()
+      addAttachmentFiles(files)
     })
     els.authApiKey.addEventListener("input", updateControls)
     els.prompt.addEventListener("keydown", (event) => {

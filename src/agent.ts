@@ -2154,13 +2154,26 @@ function summarizeToolArgs(toolName: string, args: unknown) {
   }
 
   const record = args as Record<string, unknown>
+  const records = collectToolArgRecords(record)
   const keyGroups = getToolSummaryKeys(toolName)
   const parts: string[] = []
+  const seen = new Set<string>()
 
-  for (const keys of keyGroups) {
-    const part = summarizeFirstValue(record, keys)
-    if (part) {
-      parts.push(part)
+  for (const candidate of records) {
+    for (const keys of keyGroups) {
+      const part = summarizeFirstValue(candidate, keys)
+      if (part && !seen.has(part)) {
+        seen.add(part)
+        parts.push(part)
+      }
+
+      if (parts.length >= 4) {
+        break
+      }
+    }
+
+    if (parts.length >= 4) {
+      break
     }
   }
 
@@ -2191,9 +2204,44 @@ function getToolSummaryKeys(toolName: string) {
   }
 
   return [
-    ["path", "file", "target_file"],
-    ["pattern", "query", "command"],
+    ["tool", "name", "method"],
+    ["path", "file", "filePath", "target_file", "absolutePath"],
+    ["root", "cwd", "working_directory"],
+    ["pattern", "query", "command", "cmd"],
   ]
+}
+
+function collectToolArgRecords(record: Record<string, unknown>) {
+  const records: Record<string, unknown>[] = [record]
+  const nestedKeys = ["args", "arguments", "input", "params", "payload"]
+
+  for (const key of nestedKeys) {
+    const nested = toRecord(record[key])
+    if (nested) {
+      records.push(nested)
+    }
+  }
+
+  return records
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+
+  if (typeof value !== "string") {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
 }
 
 function summarizeFirstValue(record: Record<string, unknown>, keys: string[]) {

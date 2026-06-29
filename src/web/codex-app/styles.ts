@@ -577,15 +577,51 @@ export const codexAppStyles = `    :root {
     }
 
     .message.user {
+      display: grid;
       align-self: flex-end;
       width: fit-content;
       max-width: min(680px, 82%);
+      gap: 12px;
       border-radius: 16px;
       background: color-mix(in srgb, var(--panel-soft) 94%, var(--panel));
       color: var(--text);
       padding: 10px 15px;
       font-size: 15px;
       font-weight: 560;
+      white-space: normal;
+    }
+
+    .user-message-text {
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .user-attachments {
+      display: grid;
+      gap: 6px;
+      min-width: min(260px, 100%);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--bg) 36%, transparent);
+      padding: 10px 12px;
+    }
+
+    .user-attachments-title {
+      color: var(--text);
+      font-weight: 760;
+      line-height: 1.35;
+    }
+
+    .user-attachments-list {
+      display: grid;
+      gap: 3px;
+    }
+
+    .user-attachment-item {
+      color: var(--text);
+      font-weight: 680;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
     .message.assistant {
@@ -1123,6 +1159,66 @@ export const codexAppStyles = `    :root {
         var(--shadow);
     }
 
+    .composer.drag-over {
+      border-color: color-mix(in srgb, var(--accent) 54%, var(--border));
+      background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+    }
+
+    .attachment-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .attachment-chip {
+      display: inline-flex;
+      max-width: min(100%, 280px);
+      min-height: 28px;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 620;
+      padding: 0 5px 0 10px;
+    }
+
+    .attachment-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attachment-size {
+      flex: 0 0 auto;
+      color: var(--faint);
+      font-weight: 560;
+    }
+
+    .attachment-remove {
+      display: grid;
+      width: 20px;
+      height: 20px;
+      min-height: 20px;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--faint);
+      font-size: 15px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .attachment-remove:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--danger) 8%, transparent);
+      color: var(--danger);
+    }
+
     .composer textarea {
       min-height: 54px;
       max-height: 190px;
@@ -1265,6 +1361,27 @@ export const codexAppStyles = `    :root {
 	      gap: 8px;
 	      margin-left: auto;
 	    }
+
+    .attachment-button {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      min-height: 34px;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 420;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .attachment-button:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--accent) 9%, var(--panel-soft));
+      color: var(--text);
+    }
 
 	    .composer-mode {
 	      display: inline-flex;

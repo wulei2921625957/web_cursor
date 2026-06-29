@@ -72,9 +72,12 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
             </button>
           </div>
           <form class="composer" id="composer">
+            <input id="attachmentInput" type="file" multiple hidden>
+            <div class="attachment-list" id="attachmentList" aria-live="polite" hidden></div>
 	            <textarea id="prompt" placeholder="要求后续变更"></textarea>
 	            <div class="composer-footer">
 	              <div class="composer-actions">
+                  <button class="attachment-button" id="attachmentBtn" type="button" aria-label="添加附件" title="添加图片或文件">＋</button>
 	                <div class="context-meter" id="contextMeter" tabindex="0" aria-label="上下文使用量" aria-describedby="contextPopover" aria-disabled="true">
 	                  <span class="context-meter-ring" aria-hidden="true"></span>
 	                  <span class="context-meter-label" id="contextMeterText">--</span>

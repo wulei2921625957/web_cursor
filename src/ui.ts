@@ -118,6 +118,25 @@ type UiMessage = {
   text: string
 }
 
+type RunAttachmentInput = {
+  dataBase64: string
+  lastModified?: number
+  name: string
+  size: number
+  type: string
+}
+
+type SavedRunAttachment = {
+  kind: "image" | "text" | "binary"
+  name: string
+  path: string
+  relativePath: string
+  size: number
+  textPreview?: string
+  truncated?: boolean
+  type: string
+}
+
 type PersistedUiState = {
   version: 1
   activeProjectId: string | null
@@ -161,6 +180,10 @@ type PersistedSession = {
 
 const DEFAULT_MODEL = process.env.CURSOR_MODEL ?? "composer-2"
 const DEFAULT_UI_PORT = readPort(process.env.CURSOR_UI_PORT ?? "3030", "CURSOR_UI_PORT")
+const MAX_RUN_ATTACHMENTS = 8
+const MAX_RUN_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_RUN_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
+const MAX_ATTACHMENT_TEXT_PREVIEW_BYTES = 24 * 1024
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
@@ -448,6 +471,7 @@ async function main() {
       activeSessionId = null
     }
 
+    await deleteSessionAttachments(project.cwd, session.id)
     await session.agent.dispose().catch(() => {})
     return { project, session }
   }
@@ -990,6 +1014,13 @@ async function main() {
       if (request.method === "POST" && url.pathname === "/api/run") {
         const body = await readJsonBody(request)
         const prompt = stringField(body, "prompt").trim()
+        let attachmentInputs: RunAttachmentInput[]
+        try {
+          attachmentInputs = attachmentInputsField(body, "attachments")
+        } catch (error) {
+          sendJson(response, { error: getErrorMessage(error) }, 400)
+          return
+        }
         const multiAgent = booleanField(body, "multiAgent")
         const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
 
@@ -1025,7 +1056,7 @@ async function main() {
             return
           }
 
-          if (!prompt) {
+          if (!prompt && attachmentInputs.length === 0) {
             send({ type: "error", message: "请输入任务内容。" })
             return
           }
@@ -1055,8 +1086,33 @@ async function main() {
 
           activeSession.updatedAt = Date.now()
           if (isDefaultSessionTitle(activeSession.title)) {
-            activeSession.title = titleFromPrompt(prompt)
+            activeSession.title = titleFromPrompt(prompt || "附件")
           }
+
+          let runPrompt = prompt
+          try {
+            const savedAttachments = await saveRunAttachments(
+              activeProject.cwd,
+              activeSession.id,
+              attachmentInputs
+            )
+            runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
+            if (savedAttachments.length > 0) {
+              send({
+                type: "agent",
+                event: {
+                  type: "task",
+                  status: "附件",
+                  text: `已保存 ${savedAttachments.length} 个附件到 .coding-agent/uploads。`,
+                },
+              })
+            }
+          } catch (error) {
+            send({ type: "error", message: getErrorMessage(error) })
+            runningSessions.delete(activeSession.id)
+            return
+          }
+
           send({ type: "started", mode: multiAgent ? "multi" : "single" })
 
           try {
@@ -1068,7 +1124,7 @@ async function main() {
                 force: options.force,
                 model,
                 modelLabel: formatModelLabel(model),
-                prompt,
+                prompt: runPrompt,
                 sandboxOptions: options.sandboxOptions,
                 onEvent: (event) => send({ type: "multi", state: event.state }),
               })
@@ -1082,7 +1138,7 @@ async function main() {
               )
             } else {
               await activeSession.agent.sendPrompt({
-                prompt,
+                prompt: runPrompt,
                 onEvent: (event) => send({ type: "agent", event }),
               })
             }
@@ -1484,8 +1540,11 @@ function streamEvents(
   response.writeHead(200, {
     "Cache-Control": "no-store",
     "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
     "X-Content-Type-Options": "nosniff",
   })
+  response.flushHeaders?.()
 
   let closed = false
   response.once("close", () => {
@@ -1563,6 +1622,275 @@ function modelSelectionField(
   }
 
   return value as ModelSelection
+}
+
+function attachmentInputsField(
+  body: Record<string, unknown>,
+  name: string
+): RunAttachmentInput[] {
+  const value = body[name]
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  if (value.length > MAX_RUN_ATTACHMENTS) {
+    throw new Error(`一次最多上传 ${MAX_RUN_ATTACHMENTS} 个附件。`)
+  }
+
+  return value.map((item) => {
+    if (!item || typeof item !== "object") {
+      throw new Error("附件参数无效。")
+    }
+
+    const record = item as Record<string, unknown>
+    const nameValue = stringField(record, "name").trim() || "attachment"
+    const typeValue = stringField(record, "type").trim()
+    const dataBase64 = stringField(record, "dataBase64").replace(/\s+/g, "")
+    const size = Number(record.size)
+    const lastModified = Number(record.lastModified)
+
+    if (!dataBase64) {
+      throw new Error(`附件 ${nameValue} 内容为空。`)
+    }
+
+    if (!Number.isFinite(size) || size < 0) {
+      throw new Error(`附件 ${nameValue} 大小无效。`)
+    }
+
+    if (size > MAX_RUN_ATTACHMENT_BYTES) {
+      throw new Error(
+        `附件 ${nameValue} 超过单文件限制 ${formatBytes(MAX_RUN_ATTACHMENT_BYTES)}。`
+      )
+    }
+
+    return {
+      dataBase64,
+      lastModified: Number.isFinite(lastModified) ? lastModified : undefined,
+      name: nameValue,
+      size,
+      type: typeValue,
+    }
+  })
+}
+
+async function saveRunAttachments(
+  cwd: string,
+  sessionId: string,
+  inputs: RunAttachmentInput[]
+): Promise<SavedRunAttachment[]> {
+  if (inputs.length === 0) {
+    return []
+  }
+
+  const totalBytes = inputs.reduce((sum, item) => sum + item.size, 0)
+  if (totalBytes > MAX_RUN_ATTACHMENTS_TOTAL_BYTES) {
+    throw new Error(
+      `附件总大小超过 ${formatBytes(MAX_RUN_ATTACHMENTS_TOTAL_BYTES)}。`
+    )
+  }
+
+  const storage = getProjectStoragePaths(cwd)
+  const uploadDir = path.join(
+    storage.dir,
+    "uploads",
+    sanitizePathSegment(sessionId) || "session"
+  )
+  await fs.mkdir(uploadDir, { recursive: true })
+  await ensureProjectStorageIgnored(cwd)
+
+  const saved: SavedRunAttachment[] = []
+  const timestamp = Date.now()
+
+  for (const [index, input] of inputs.entries()) {
+    const buffer = decodeAttachmentBase64(input)
+    if (buffer.length > MAX_RUN_ATTACHMENT_BYTES) {
+      throw new Error(
+        `附件 ${input.name} 超过单文件限制 ${formatBytes(MAX_RUN_ATTACHMENT_BYTES)}。`
+      )
+    }
+
+    const fileName =
+      String(timestamp) +
+      "-" +
+      String(index + 1).padStart(2, "0") +
+      "-" +
+      sanitizeAttachmentFileName(input.name)
+    const absolutePath = path.join(uploadDir, fileName)
+    await fs.writeFile(absolutePath, buffer)
+
+    const textPreview = extractAttachmentTextPreview(input.name, input.type, buffer)
+    const relativePath = path.relative(cwd, absolutePath).split(path.sep).join("/")
+    saved.push({
+      kind: attachmentKind(input.name, input.type, Boolean(textPreview.preview)),
+      name: input.name,
+      path: absolutePath,
+      relativePath,
+      size: buffer.length,
+      textPreview: textPreview.preview,
+      truncated: textPreview.truncated,
+      type: input.type,
+    })
+  }
+
+  return saved
+}
+
+function decodeAttachmentBase64(input: RunAttachmentInput) {
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(input.dataBase64)) {
+    throw new Error(`附件 ${input.name} 不是有效的 base64 内容。`)
+  }
+
+  const buffer = Buffer.from(input.dataBase64, "base64")
+  if (input.size > 0 && Math.abs(buffer.length - input.size) > 2) {
+    throw new Error(`附件 ${input.name} 上传内容长度不一致。`)
+  }
+
+  return buffer
+}
+
+function buildPromptWithAttachments(
+  prompt: string,
+  attachments: SavedRunAttachment[]
+) {
+  if (attachments.length === 0) {
+    return prompt
+  }
+
+  const parts = [prompt.trim() || "请查看附件。", "", "Uploaded attachments:"]
+
+  for (const attachment of attachments) {
+    parts.push(
+      "",
+      `- ${attachment.name}`,
+      `  - kind: ${attachment.kind}`,
+      `  - type: ${attachment.type || "unknown"}`,
+      `  - size: ${formatBytes(attachment.size)}`,
+      `  - workspace path: ${attachment.relativePath}`,
+      `  - absolute path: ${attachment.path}`
+    )
+
+    if (attachment.textPreview) {
+      parts.push(
+        `  - text preview${attachment.truncated ? " (truncated)" : ""}:`,
+        "```text",
+        sanitizeFenceText(attachment.textPreview),
+        "```"
+      )
+    } else if (attachment.kind === "image") {
+      parts.push(
+        "  - note: This is an image file saved in the workspace. Use the path above if image/file inspection is available."
+      )
+    } else {
+      parts.push(
+        "  - note: Binary or unsupported text extraction; use the saved path if the file is needed."
+      )
+    }
+  }
+
+  return parts.join("\n")
+}
+
+function extractAttachmentTextPreview(name: string, mimeType: string, buffer: Buffer) {
+  if (!isTextAttachment(name, mimeType)) {
+    return { preview: "", truncated: false }
+  }
+
+  const slice = buffer.subarray(0, MAX_ATTACHMENT_TEXT_PREVIEW_BYTES)
+  const preview = slice.toString("utf8")
+
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(preview)) {
+    return { preview: "", truncated: false }
+  }
+
+  return {
+    preview: preview.trim(),
+    truncated: buffer.length > MAX_ATTACHMENT_TEXT_PREVIEW_BYTES,
+  }
+}
+
+function isTextAttachment(name: string, mimeType: string) {
+  const type = mimeType.toLowerCase()
+  if (
+    type.startsWith("text/") ||
+    type.includes("json") ||
+    type.includes("xml") ||
+    type.includes("javascript") ||
+    type.includes("typescript")
+  ) {
+    return true
+  }
+
+  const lowerName = path.basename(name).toLowerCase()
+  if (lowerName === ".env" || lowerName.endsWith(".env")) {
+    return true
+  }
+
+  const extension = path.extname(lowerName)
+  return [
+    ".c",
+    ".conf",
+    ".css",
+    ".csv",
+    ".env",
+    ".go",
+    ".h",
+    ".html",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".log",
+    ".md",
+    ".py",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".vue",
+    ".xml",
+    ".yaml",
+    ".yml",
+  ].includes(extension)
+}
+
+function attachmentKind(name: string, mimeType: string, hasTextPreview: boolean) {
+  if (hasTextPreview) {
+    return "text"
+  }
+
+  if (mimeType.toLowerCase().startsWith("image/")) {
+    return "image"
+  }
+
+  const extension = path.extname(name).toLowerCase()
+  return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"].includes(extension)
+    ? "image"
+    : "binary"
+}
+
+function sanitizeAttachmentFileName(name: string) {
+  const base = path.basename(name || "attachment")
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "")
+  return cleaned || "attachment"
+}
+
+function sanitizePathSegment(value: string) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]+/g, "_")
+}
+
+function sanitizeFenceText(value: string) {
+  return value.replace(/```/g, "` ` `")
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
 function persistApiKey(apiKey: string) {
@@ -1875,6 +2203,7 @@ async function writeProjectPersistedState(state: PersistedProjectState) {
 
 async function deleteProjectPersistedState(cwd: string, legacyStateFile: string) {
   const storage = getProjectStoragePaths(cwd)
+  await deleteProjectAttachments(cwd)
   await Promise.all(
     [
       storage.dbFile,
@@ -1892,6 +2221,21 @@ async function deleteProjectPersistedState(cwd: string, legacyStateFile: string)
     throw error
   })
   await removeLegacyPersistedProject(legacyStateFile, cwd)
+}
+
+async function deleteSessionAttachments(cwd: string, sessionId: string) {
+  const storage = getProjectStoragePaths(cwd)
+  const uploadDir = path.join(
+    storage.dir,
+    "uploads",
+    sanitizePathSegment(sessionId) || "session"
+  )
+  await fs.rm(uploadDir, { force: true, recursive: true })
+}
+
+async function deleteProjectAttachments(cwd: string) {
+  const storage = getProjectStoragePaths(cwd)
+  await fs.rm(path.join(storage.dir, "uploads"), { force: true, recursive: true })
 }
 
 function ensureProjectStateSchema(db: Database) {
