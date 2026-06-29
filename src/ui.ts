@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process"
 import {
   accessSync,
@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { Database } from "bun:sqlite"
+import BetterSqlite3 from "better-sqlite3"
 
 import {
   CodingAgentSession,
@@ -31,6 +31,33 @@ import { MultiAgentRunner, type MultiAgentRunState } from "./multi-agent.js"
 import { normalizeSessionMemorySnapshot } from "./session-memory.js"
 import type { ModelSelection } from "@cursor/sdk"
 import { renderCodexAppHtml } from "./web/codex-app/render.js"
+
+type SqliteStatement<Result, Params extends unknown[]> = {
+  all(...params: Params): Result[]
+  get(...params: Params): Result | undefined
+  run(...params: Params): unknown
+}
+
+type Database = {
+  close(): void
+  exec(sql: string): unknown
+  query<Result, Params extends unknown[] = unknown[]>(
+    sql: string
+  ): SqliteStatement<Result, Params>
+}
+
+function openDatabase(filename: string): Database {
+  const db = new BetterSqlite3(filename)
+
+  return {
+    close: () => {
+      db.close()
+    },
+    exec: (sql) => db.exec(sql),
+    query: <Result, Params extends unknown[] = unknown[]>(sql: string) =>
+      db.prepare(sql) as unknown as SqliteStatement<Result, Params>,
+  }
+}
 
 type UiOptions = {
   context: ContextCompactionOptions
@@ -1701,7 +1728,7 @@ function readProjectPersistedStateFromSqlite(
     return null
   }
 
-  const db = new Database(storage.dbFile)
+  const db = openDatabase(storage.dbFile)
   try {
     ensureProjectStateSchema(db)
     const project = db
@@ -1784,7 +1811,7 @@ async function writeProjectPersistedState(state: PersistedProjectState) {
   await fs.mkdir(storage.dir, { recursive: true })
   await ensureProjectStorageIgnored(state.project.cwd)
 
-  const db = new Database(storage.dbFile, { create: true })
+  const db = openDatabase(storage.dbFile)
   try {
     ensureProjectStateSchema(db)
     db.exec("BEGIN IMMEDIATE")

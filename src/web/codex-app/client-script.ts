@@ -26,15 +26,8 @@ export const codexAppClientScript = `    const els = {
       cwd: document.getElementById("cwd"),
       main: document.getElementById("main"),
 	      messages: document.getElementById("messages"),
-	      modelAddButton: document.getElementById("modelAddButton"),
-	      modelAutoToggle: document.getElementById("modelAutoToggle"),
-	      modelList: document.getElementById("modelList"),
-	      modelMaxToggle: document.getElementById("modelMaxToggle"),
-	      modelMenu: document.getElementById("modelMenu"),
 	      modelPicker: document.getElementById("modelPicker"),
-	      modelPickerButton: document.getElementById("modelPickerButton"),
-	      modelPickerLabel: document.getElementById("modelPickerLabel"),
-	      modelSearch: document.getElementById("modelSearch"),
+	      modelSelect: document.getElementById("modelSelect"),
 	      multiAgentMode: document.getElementById("multiAgentMode"),
 	      newSessionBtn: document.getElementById("newSessionBtn"),
       openProjectBtn: document.getElementById("openProjectBtn"),
@@ -84,10 +77,6 @@ export const codexAppClientScript = `    const els = {
     let selectedChangePath = ""
     let modelChoices = []
     let currentModel = null
-    let modelMenuOpen = false
-    let modelSearchQuery = ""
-    let modelAutoEnabled = false
-    let modelMaxEnabled = false
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
@@ -316,7 +305,7 @@ export const codexAppClientScript = `    const els = {
         els.authSaveKey.checked = false
       }
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
-	      els.modelPickerButton.disabled = activeBusy || !modelsLoaded
+	      els.modelSelect.disabled = activeBusy || !modelsLoaded
 	      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
 	      els.prompt.disabled = activeBusy || !hasSession || !modelsLoaded
       els.sendBtn.classList.toggle("running", activeBusy)
@@ -1767,91 +1756,33 @@ export const codexAppClientScript = `    const els = {
     }
 
     function renderModelPicker() {
-      const currentChoice = findModelChoice(modelChoices, currentModel)
-      const currentDisplay = formatModelChoiceDisplay(currentChoice)
-      const currentContextLabel = contextWindowLabel(currentChoice)
-      els.modelPickerLabel.textContent = currentDisplay
-        ? [currentDisplay.name, currentDisplay.detail, currentContextLabel].filter(Boolean).join(" ")
-        : state.model && state.model !== "-"
-          ? state.model
-        : state.modelsLoaded
-          ? "选择模型"
-          : "加载模型"
-      els.modelPickerButton.setAttribute("aria-expanded", modelMenuOpen ? "true" : "false")
-      els.modelMenu.hidden = !modelMenuOpen
-      els.modelAutoToggle.setAttribute("aria-pressed", modelAutoEnabled ? "true" : "false")
-      els.modelMaxToggle.setAttribute("aria-pressed", modelMaxEnabled ? "true" : "false")
-      els.modelAutoToggle.classList.toggle("active", modelAutoEnabled)
-      els.modelMaxToggle.classList.toggle("active", modelMaxEnabled)
-
-      renderModelList()
-    }
-
-    function renderModelList() {
       const currentKey = modelSelectionKey(currentModel)
-      const query = modelSearchQuery.trim().toLowerCase()
-      const visibleChoices = modelChoices.filter((choice) => {
-        if (!query) return true
-        return [
-          choice.label,
-          choice.description,
-          contextWindowLabel(choice),
-          choice.value && choice.value.id,
-          selectionDetail(choice.value),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(query)
-      })
+      els.modelSelect.textContent = ""
 
-      els.modelList.textContent = ""
-
-      if (visibleChoices.length === 0) {
-        const empty = document.createElement("div")
-        empty.className = "model-empty"
-        empty.textContent = modelChoices.length === 0 ? "请先设置密钥并加载模型" : "没有匹配的模型"
-        els.modelList.appendChild(empty)
+      if (modelChoices.length === 0) {
+        const option = document.createElement("option")
+        option.value = ""
+        option.textContent = state.modelsLoaded ? "没有可用模型" : "加载模型"
+        option.selected = true
+        els.modelSelect.appendChild(option)
         return
       }
 
-      for (const choice of visibleChoices) {
-        const display = formatModelChoiceDisplay(choice)
-        const selected = modelSelectionKey(choice.value) === currentKey
-        const row = document.createElement("div")
-        row.className = "model-row" + (selected ? " selected" : "")
-        const choiceButton = document.createElement("button")
-        choiceButton.type = "button"
-        choiceButton.className = "model-row-choice"
-        choiceButton.title = choice.description || choice.label || ""
-        choiceButton.addEventListener("click", () => {
-          void selectModel(choice.value)
-        })
+      if (currentKey && !findModelChoice(modelChoices, currentModel)) {
+        const option = document.createElement("option")
+        option.value = currentKey
+        option.textContent = state.model && state.model !== "-" ? state.model : currentModel.id
+        option.selected = true
+        els.modelSelect.appendChild(option)
+      }
 
-        const label = document.createElement("span")
-        label.className = "model-row-label"
-        const name = document.createElement("span")
-        name.className = "model-row-name"
-        name.textContent = display.name
-        label.appendChild(name)
-
-        const contextLabel = contextWindowLabel(choice)
-        const rowDetail = [display.detail, contextLabel].filter(Boolean).join(" · ")
-        if (rowDetail) {
-          const detail = document.createElement("span")
-          detail.className = "model-row-detail"
-          detail.textContent = rowDetail
-          label.appendChild(detail)
-        }
-
-        const mark = document.createElement("span")
-        mark.className = "model-row-check"
-        mark.textContent = selected ? "✓" : ""
-
-        choiceButton.appendChild(label)
-        row.appendChild(choiceButton)
-        row.appendChild(mark)
-        els.modelList.appendChild(row)
+      for (const choice of modelChoices) {
+        const option = document.createElement("option")
+        option.value = modelSelectionKey(choice.value)
+        option.textContent = formatModelOptionLabel(choice)
+        option.title = choice.description || choice.label || ""
+        option.selected = option.value === currentKey
+        els.modelSelect.appendChild(option)
       }
     }
 
@@ -1865,18 +1796,10 @@ export const codexAppClientScript = `    const els = {
           selectedModel: currentModel,
         })
         applyState(result)
-        setModelMenuOpen(false)
+        renderModelPicker()
       } catch (error) {
         appendMeta("[错误] " + error.message, true)
         await refreshModels().catch(() => {})
-      }
-    }
-
-    function setModelMenuOpen(open) {
-      modelMenuOpen = Boolean(open && state.modelsLoaded)
-      renderModelPicker()
-      if (modelMenuOpen) {
-        window.setTimeout(() => els.modelSearch.focus(), 0)
       }
     }
 
@@ -1907,6 +1830,12 @@ export const codexAppClientScript = `    const els = {
       const name = parts[0] || label
       const detail = cleanModelDetail(parts.slice(1).join(" - ") || selectionDetail(choice.value))
       return { name, detail }
+    }
+
+    function formatModelOptionLabel(choice) {
+      const display = formatModelChoiceDisplay(choice)
+      if (!display) return ""
+      return [display.name, display.detail, contextWindowLabel(choice)].filter(Boolean).join(" ")
     }
 
     function selectionDetail(model) {
@@ -2560,39 +2489,10 @@ export const codexAppClientScript = `    const els = {
       }
     })
 
-    els.modelPickerButton.addEventListener("click", () => {
-      setModelMenuOpen(!modelMenuOpen)
-    })
-
-    els.modelSearch.addEventListener("input", () => {
-      modelSearchQuery = els.modelSearch.value
-      renderModelPicker()
-    })
-
-    els.modelAutoToggle.addEventListener("click", () => {
-      modelAutoEnabled = !modelAutoEnabled
-      renderModelPicker()
-    })
-
-    els.modelMaxToggle.addEventListener("click", () => {
-      modelMaxEnabled = !modelMaxEnabled
-      renderModelPicker()
-    })
-
-    els.modelAddButton.addEventListener("click", () => {
-      appendMeta("[模型] 模型列表来自 Cursor SDK，当前没有手动添加入口。")
-      setModelMenuOpen(false)
-    })
-
-    document.addEventListener("click", (event) => {
-      if (!modelMenuOpen || els.modelPicker.contains(event.target)) return
-      setModelMenuOpen(false)
-    })
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && modelMenuOpen) {
-        setModelMenuOpen(false)
-        els.modelPickerButton.focus()
+    els.modelSelect.addEventListener("change", () => {
+      const choice = modelChoices.find((item) => modelSelectionKey(item.value) === els.modelSelect.value)
+      if (choice) {
+        void selectModel(choice.value)
       }
     })
 

@@ -1282,199 +1282,20 @@ export const codexAppStyles = `    :root {
 	    }
 
     .model-picker {
-      position: relative;
       flex: 0 0 auto;
     }
 
-    .model-picker-button {
-      display: inline-flex;
+    .model-select {
       width: clamp(126px, 16vw, 196px);
       min-height: 34px;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+      border: 0;
       border-radius: 999px;
       background: var(--panel-soft);
       color: var(--muted);
       font-size: 13px;
       font-weight: 620;
       padding: 0 12px;
-    }
-
-    .model-picker-button[aria-expanded="true"] {
-      background: var(--selected);
-      color: var(--text);
-    }
-
-    .model-picker-label {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .model-picker-caret {
-      color: var(--faint);
-      font-size: 13px;
-    }
-
-    .model-menu {
-      position: absolute;
-      z-index: 70;
-      right: 0;
-      bottom: calc(100% + 10px);
-      display: flex;
-      max-width: calc(100vw - 32px);
-      overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
-    }
-
-    .model-menu-list {
-      display: grid;
-      width: min(360px, calc(100vw - 32px));
-      background: var(--panel);
-    }
-
-    .model-search {
-      height: 40px;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--text);
-      font-size: 16px;
-      padding: 0 14px;
-    }
-
-    .model-search::placeholder {
-      color: var(--faint);
-    }
-
-    .model-mode-row,
-    .model-row,
-    .model-add {
-      width: 100%;
-      border-radius: 0;
-      color: var(--text);
-      text-align: left;
-    }
-
-    .model-mode-row {
-      display: flex;
-      min-height: 40px;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 14px;
-      font-size: 16px;
-    }
-
-    .model-switch {
-      display: inline-flex;
-      width: 42px;
-      height: 28px;
-      align-items: center;
-      border-radius: 999px;
-      background: var(--selected);
-      padding: 3px;
-      transition: background .14s ease;
-    }
-
-    .model-switch span {
-      width: 22px;
-      height: 22px;
-      border-radius: 999px;
-      background: var(--panel);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
-      transition: transform .14s ease;
-    }
-
-    .model-mode-row.active .model-switch {
-      background: var(--accent);
-    }
-
-    .model-mode-row.active .model-switch span {
-      transform: translateX(14px);
-    }
-
-    .model-list {
-      max-height: 320px;
-      overflow: auto;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      padding: 8px 0;
-    }
-
-    .model-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 18px;
-      min-height: 40px;
-      align-items: center;
-      gap: 10px;
-      padding: 0 14px;
-    }
-
-    .model-row-choice {
-      display: flex;
-      min-width: 0;
-      min-height: 40px;
-      align-items: center;
-      justify-content: flex-start;
-      border-radius: 0;
-      color: var(--text);
-      padding: 0;
-      text-align: left;
-    }
-
-    .model-row:hover:not(:disabled),
-    .model-row.selected {
-      background: var(--panel-soft);
-    }
-
-    .model-row-label {
-      display: inline-flex;
-      min-width: 0;
-      align-items: baseline;
-      gap: 6px;
-      overflow: hidden;
-    }
-
-    .model-row-name {
-      min-width: 0;
-      overflow: hidden;
-      font-size: 16px;
-      font-weight: 560;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .model-row-detail {
-      color: var(--muted);
-      font-size: 15px;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .model-row-check {
-      color: var(--muted);
-      font-size: 16px;
-      text-align: center;
-    }
-
-    .model-add {
-      min-height: 44px;
-      color: var(--muted);
-      font-size: 16px;
-      padding: 0 14px;
-    }
-
-    .model-empty {
-      color: var(--muted);
-      font-size: 13px;
-      padding: 12px 14px;
+      appearance: auto;
     }
 
     .send {
@@ -1944,11 +1765,7 @@ export const codexAppStyles = `    :root {
         text-overflow: ellipsis;
       }
 
-      .model-picker-button {
+      .model-select {
         width: clamp(96px, 34vw, 148px);
-      }
-
-      .model-menu {
-        right: -44px;
       }
     }`

@@ -89,25 +89,9 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 	                  <span>多 Agent</span>
 	                </label>
 	                <div class="model-picker" id="modelPicker">
-	                  <button class="model-picker-button" id="modelPickerButton" type="button" aria-haspopup="true" aria-expanded="false">
-	                    <span class="model-picker-label" id="modelPickerLabel">选择模型</span>
-	                    <span class="model-picker-caret" aria-hidden="true">⌄</span>
-	                  </button>
-	                  <div class="model-menu" id="modelMenu" hidden>
-	                    <section class="model-menu-list" aria-label="模型列表">
-	                      <input class="model-search" id="modelSearch" autocomplete="off" placeholder="Search models">
-	                      <button class="model-mode-row" id="modelAutoToggle" type="button" aria-pressed="false">
-	                        <span>Auto</span>
-	                        <span class="model-switch" aria-hidden="true"><span></span></span>
-	                      </button>
-	                      <button class="model-mode-row" id="modelMaxToggle" type="button" aria-pressed="false">
-	                        <span>MAX Mode</span>
-	                        <span class="model-switch" aria-hidden="true"><span></span></span>
-	                      </button>
-	                      <div class="model-list" id="modelList"></div>
-	                      <button class="model-add" id="modelAddButton" type="button">Add Models</button>
-	                    </section>
-	                  </div>
+	                  <select class="model-select" id="modelSelect" aria-label="选择模型">
+	                    <option value="">加载模型</option>
+	                  </select>
 	                </div>
 	                <button class="send primary" id="sendBtn" type="submit" aria-label="发送">↑</button>
 	              </div>
