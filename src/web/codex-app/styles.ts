@@ -1539,15 +1539,13 @@ export const codexAppStyles = `    :root {
       line-height: 1;
     }
 
-    .review-header-actions,
-    .file-review-toolbar {
+    .review-header-actions {
       display: flex;
       align-items: center;
       gap: 4px;
     }
 
-    .review-header-actions button,
-    .file-review-toolbar button {
+    .review-header-actions button {
       display: grid;
       width: 30px;
       min-height: 30px;
@@ -1733,21 +1731,16 @@ export const codexAppStyles = `    :root {
 
     .file-review {
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
       min-width: 0;
       min-height: 0;
       background: var(--panel);
     }
 
-    .file-review-toolbar {
-      justify-content: flex-end;
-      padding: 8px 8px 6px;
-    }
-
     .file-review input {
       width: auto;
       height: 32px;
-      margin: 0 8px 6px;
+      margin: 8px 8px 6px;
       border-radius: 999px;
       padding: 0 12px;
       font-size: 12px;

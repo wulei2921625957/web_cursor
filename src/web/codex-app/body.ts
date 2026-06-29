@@ -32,7 +32,6 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
         </button>
       </nav>
 
-      <div class="sidebar-heading">打开项目</div>
       <form class="open-project" id="openProjectForm">
         <button class="primary" id="openProjectBtn" type="button">打开项目</button>
         <div class="toast" id="projectToast"></div>
@@ -123,11 +122,6 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
           </section>
 
           <aside class="file-review" aria-label="变更文件">
-            <div class="file-review-toolbar" aria-label="文件视图操作">
-              <button type="button" title="更多" aria-label="更多">...</button>
-              <button type="button" title="展开全部" aria-label="展开全部">⌘</button>
-              <button type="button" title="文件树" aria-label="文件树">□</button>
-            </div>
             <input id="changesFilter" autocomplete="off" placeholder="筛选文件...">
             <div class="change-tree" id="changeTree"></div>
           </aside>

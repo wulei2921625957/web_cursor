@@ -2559,16 +2559,13 @@ export const codexAppClientScript = `    const els = {
       els.changesList.textContent = ""
 
       if (!latestChanges.available) {
-        appendChangesEmpty(els.changesList, latestChanges.message || "请先打开项目。")
         return
       }
 
       if (files.length === 0) {
-        const message =
-          Array.isArray(latestChanges.files) && latestChanges.files.length > 0
-            ? "没有匹配的变更文件。"
-            : latestChanges.message || "当前没有代码变更。"
-        appendChangesEmpty(els.changesList, message)
+        if (Array.isArray(latestChanges.files) && latestChanges.files.length > 0) {
+          appendChangesEmpty(els.changesList, "没有匹配的变更文件。")
+        }
         return
       }
 
@@ -2669,16 +2666,13 @@ export const codexAppClientScript = `    const els = {
       els.changeTree.textContent = ""
 
       if (!latestChanges.available) {
-        appendChangesEmpty(els.changeTree, latestChanges.message || "请先打开项目。")
         return
       }
 
       if (files.length === 0) {
-        const message =
-          Array.isArray(latestChanges.files) && latestChanges.files.length > 0
-            ? "没有匹配的文件。"
-            : "当前没有代码变更。"
-        appendChangesEmpty(els.changeTree, message)
+        if (Array.isArray(latestChanges.files) && latestChanges.files.length > 0) {
+          appendChangesEmpty(els.changeTree, "没有匹配的文件。")
+        }
         return
       }
 
