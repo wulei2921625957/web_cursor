@@ -71,11 +71,6 @@ type ModelSelectItem = SelectItem<ModelSelection>
 
 type CommandSelectItem = SelectItem<SlashCommandName>
 
-type ModelPreference = {
-  fast: boolean
-  thinking: boolean
-}
-
 type ViewMode = "command" | "input" | "model"
 
 type PendingSecretInput = {
@@ -103,10 +98,6 @@ export function App({
   const [model, setModel] = useState<ModelSelection>(initialModel)
   const [modelItems, setModelItems] = useState<ModelSelectItem[]>([])
   const [modelSearch, setModelSearch] = useState("")
-  const [modelPreference, setModelPreference] = useState<ModelPreference>({
-    fast: false,
-    thinking: false,
-  })
   const [loadingModels, setLoadingModels] = useState(false)
   const [pendingSecretInput, setPendingSecretInput] = useState<PendingSecretInput>(null)
   const [scrollOffset, setScrollOffset] = useState(0)
@@ -175,10 +166,6 @@ export function App({
     if (mode === "model") {
       if (key.name === "backspace" || key.name === "delete") {
         setModelSearch((value) => value.slice(0, -1))
-      } else if (character === "T") {
-        toggleModelPreference("thinking")
-      } else if (character === "F") {
-        toggleModelPreference("fast")
       } else if (isSearchInput(character)) {
         setModelSearch((value) => `${value}${character}`)
       }
@@ -272,8 +259,8 @@ export function App({
     [input]
   )
   const filteredModelItems = useMemo(
-    () => filterModelItems(modelItems, modelSearch, modelPreference),
-    [modelItems, modelPreference, modelSearch]
+    () => filterModelItems(modelItems, modelSearch),
+    [modelItems, modelSearch]
   )
 
   const submitInput = (value: string) => {
@@ -325,14 +312,8 @@ export function App({
       case "/model":
         await openModelPicker()
         break
-      case "/compact":
-        await compactAgentContext()
-        break
       case "/local":
         await switchExecutionMode("local")
-        break
-      case "/reset":
-        await resetAgent()
         break
       case "/set_apiKey":
         await setApiKeyFromCommand(rawCommand)
@@ -355,10 +336,6 @@ export function App({
 
     setLoadingModels(true)
     setModelSearch("")
-    setModelPreference({
-      fast: getSelectionPreference(model, "fast") === true,
-      thinking: getSelectionPreference(model, "thinking") === true,
-    })
     setMode("model")
 
     try {
@@ -380,25 +357,9 @@ export function App({
   }
 
   const selectModel = (item: ModelSelectItem) => {
-    const selection =
-      findPreferredSelection(item.value, modelItems, modelPreference) ?? item.value
-    sessionRef.current?.setModel(selection)
-    setModel(selection)
+    sessionRef.current?.setModel(item.value)
+    setModel(item.value)
     setMode("input")
-  }
-
-  const toggleModelPreference = (preference: keyof ModelPreference) => {
-    setModelPreference((current) => {
-      const next = { ...current, [preference]: !current[preference] }
-      const selection = findPreferredSelection(model, modelItems, next)
-
-      if (selection) {
-        sessionRef.current?.setModel(selection)
-        setModel(selection)
-      }
-
-      return next
-    })
   }
 
   const selectCommand = (item: CommandSelectItem) => {
@@ -418,25 +379,6 @@ export function App({
     const item = toModelSelectItem(option, filteredModelItems)
     if (item) {
       selectModel(item)
-    }
-  }
-
-  const resetAgent = async () => {
-    const session = sessionRef.current
-    if (!session || busy) {
-      return
-    }
-
-    setBusy(true)
-
-    try {
-      await session.reset()
-      setTranscript([])
-      setScrollOffset(0)
-    } catch (error) {
-      addEntry("error", "reset", getErrorMessage(error))
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -496,30 +438,6 @@ export function App({
     }
 
     throw new Error("--save is currently supported on Windows only.")
-  }
-
-  const compactAgentContext = async () => {
-    const session = sessionRef.current
-    if (!session || busy) {
-      return
-    }
-
-    const compactionId = nextId()
-    setBusy(true)
-
-    try {
-      await session.compactContext({
-        force: true,
-        reason: "manual /compact command",
-        onEvent: (event) => {
-          setTranscript((items) => applyAgentEvent(items, event, compactionId))
-        },
-      })
-    } catch (error) {
-      addEntry("error", "compact", getErrorMessage(error))
-    } finally {
-      setBusy(false)
-    }
   }
 
   const switchExecutionMode = async (nextMode: ExecutionMode) => {
@@ -669,10 +587,7 @@ export function App({
           paddingX={1}
         >
           <text attributes={TextAttributes.BOLD}>Select a model</text>
-          <text fg="gray">
-            Type to search - T thinking {modelPreference.thinking ? "on" : "off"} - F fast{" "}
-            {modelPreference.fast ? "on" : "off"} - Enter choose - Escape cancel
-          </text>
+          <text fg="gray">Type to search - Enter choose - Escape cancel</text>
           <text fg="gray">Search: {modelSearch || "all models"}</text>
           {loadingModels ? (
             <text fg="yellow">Loading models...</text>
@@ -1038,7 +953,8 @@ function applyAgentEvent(
           .join(" ")
       )
     }
-    case "status":
+    case "status": {
+      const detail = formatEventDetail(event)
       return ["CREATING", "RUNNING", "FINISHED"].includes(event.status)
         ? items
         : upsertEntry(
@@ -1046,8 +962,9 @@ function applyAgentEvent(
             `status-${assistantId}`,
             event.status === "ERROR" ? "error" : "status",
             "run",
-            `${formatRunStatus(event.status)}${event.message ? ` ${event.message}` : ""}`
+            `${formatRunStatus(event.status)}${detail ? ` ${detail}` : ""}`
           )
+    }
     case "task": {
       const text = compactText([event.status, event.text].filter(Boolean).join(" "))
       return text
@@ -1060,6 +977,8 @@ function applyAgentEvent(
         event.durationMs ? `duration=${formatDuration(event.durationMs)}` : undefined,
         event.usage?.inputTokens ? `input=${event.usage.inputTokens}` : undefined,
         event.usage?.outputTokens ? `output=${event.usage.outputTokens}` : undefined,
+        event.message ? `error=${event.message}` : undefined,
+        event.errorCode ? `code=${event.errorCode}` : undefined,
       ].filter(Boolean)
 
       return details.length > 0
@@ -1067,6 +986,12 @@ function applyAgentEvent(
         : items
     }
   }
+}
+
+function formatEventDetail(event: { message?: string; errorCode?: string }) {
+  return [event.message, event.errorCode ? `code=${event.errorCode}` : undefined]
+    .filter(Boolean)
+    .join(" ")
 }
 
 function formatCompactionEvent(event: Extract<AgentEvent, { type: "compaction" }>) {
@@ -1204,95 +1129,18 @@ function modelKey(choice: ModelChoice) {
 
 function filterModelItems(
   items: ModelSelectItem[],
-  search: string,
-  preference: ModelPreference
+  search: string
 ) {
   const normalizedSearch = normalizeToken(search)
 
   return items.filter((item) => {
-    const matchesSearch =
+    return (
       !normalizedSearch ||
       normalizeToken(`${item.name} ${item.description} ${selectionSearchText(item.value)}`).includes(
         normalizedSearch
       )
-    const matchesThinking =
-      !preference.thinking ||
-      getSelectionPreference(item.value, "thinking") === true
-    const matchesFast =
-      !preference.fast ||
-      getSelectionPreference(item.value, "fast") === true
-
-    return matchesSearch && matchesThinking && matchesFast
+    )
   })
-}
-
-function findPreferredSelection(
-  current: ModelSelection,
-  items: ModelSelectItem[],
-  preference: ModelPreference
-) {
-  const sameModelItems = items.filter((item) => item.value.id === current.id)
-
-  if (sameModelItems.length === 0) {
-    return undefined
-  }
-
-  let candidates = sameModelItems
-  for (const key of ["thinking", "fast"] as const) {
-    if (!modelSupportsPreference(sameModelItems, key)) {
-      continue
-    }
-
-    const desired = preference[key]
-    const matching = candidates.filter((item) => {
-      const value = getSelectionPreference(item.value, key)
-      return desired ? value === true : value !== true
-    })
-
-    if (matching.length > 0) {
-      candidates = matching
-    }
-  }
-
-  return candidates.sort(
-    (left, right) =>
-      selectionOverlapScore(right.value, current) -
-      selectionOverlapScore(left.value, current)
-  )[0]?.value
-}
-
-function modelSupportsPreference(
-  items: ModelSelectItem[],
-  preference: keyof ModelPreference
-) {
-  return items.some(
-    (item) => getSelectionPreference(item.value, preference) !== undefined
-  )
-}
-
-function getSelectionPreference(
-  selection: ModelSelection,
-  preference: keyof ModelPreference
-) {
-  for (const param of selection.params ?? []) {
-    const key = normalizeToken(`${param.id} ${param.value}`)
-    if (key.includes(preference)) {
-      return !isFalseValue(key)
-    }
-  }
-
-  const idKey = normalizeToken(selection.id)
-  return idKey.includes(preference) ? !isFalseValue(idKey) : undefined
-}
-
-function selectionOverlapScore(left: ModelSelection, right: ModelSelection) {
-  const rightParams = new Set(
-    (right.params ?? []).map((param) => `${param.id}=${param.value}`)
-  )
-
-  return (left.params ?? []).filter((param) =>
-    rightParams.has(`${param.id}=${param.value}`)
-  ).length
 }
 
 function selectionSearchText(selection: ModelSelection) {
@@ -1369,17 +1217,6 @@ function getInputCharacter(key: KeyEvent) {
 
 function isSearchInput(input: string) {
   return input.length > 0 && !/[\u0000-\u001F\u007F]/.test(input)
-}
-
-function isFalseValue(value: string) {
-  return (
-    value.includes("false") ||
-    value.includes("off") ||
-    value.includes("disabled") ||
-    value.includes("disable") ||
-    value.includes("none") ||
-    value.includes("no")
-  )
 }
 
 function normalizeToken(value: string) {

@@ -409,7 +409,10 @@ function renderPlainEvent(
       break
     case "status":
       if (event.status !== "FINISHED") {
-        annotate(`[status] ${event.status}${event.message ? ` ${event.message}` : ""}`)
+        const detail = [event.message, event.errorCode && `code=${event.errorCode}`]
+          .filter(Boolean)
+          .join(" ")
+        annotate(`[status] ${event.status}${detail ? ` ${detail}` : ""}`)
       }
       break
     case "task":
@@ -423,6 +426,8 @@ function renderPlainEvent(
         event.durationMs ? `duration=${formatDuration(event.durationMs)}` : undefined,
         event.usage?.inputTokens ? `input=${event.usage.inputTokens}` : undefined,
         event.usage?.outputTokens ? `output=${event.usage.outputTokens}` : undefined,
+        event.message ? `error=${event.message}` : undefined,
+        event.errorCode ? `code=${event.errorCode}` : undefined,
       ].filter(Boolean)
 
       annotate(`[done] ${details.join(" ")}`)
@@ -487,8 +492,6 @@ Options:
 Interactive commands:
   /local                 使用本地项目执行后续任务。
   /model                 打开模型选择器。
-  /compact               压缩当前会话上下文。
-  /reset                 重置会话并清空上下文。
   /set_apiKey            设置 Cursor API Key；加 --save 可在 Windows 保存。
 
 Examples:

@@ -1,11 +1,9 @@
 export type SlashCommandName =
-  | "/compact"
   | "/exit"
   | "/help"
   | "/local"
   | "/model"
   | "/quit"
-  | "/reset"
   | "/set_apiKey"
 
 export type SlashCommand = {
@@ -17,8 +15,6 @@ export const slashCommands: SlashCommand[] = [
   { name: "/help", summary: "查看可用命令" },
   { name: "/local", summary: "使用本地项目" },
   { name: "/model", summary: "切换模型" },
-  { name: "/compact", summary: "压缩上下文" },
-  { name: "/reset", summary: "重置会话" },
   { name: "/set_apiKey", summary: "设置密钥，--save 保存" },
   { name: "/exit", summary: "退出程序" },
   { name: "/quit", summary: "退出程序" },

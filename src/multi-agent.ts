@@ -8,7 +8,11 @@ import {
   type SDKMessage,
 } from "@cursor/sdk"
 
-import type { LocalSandboxOptions, TokenUsage } from "./agent.js"
+import {
+  createWorkspaceCustomTools,
+  type LocalSandboxOptions,
+  type TokenUsage,
+} from "./agent.js"
 
 export type MultiAgentTaskStatus =
   | "PENDING"
@@ -173,7 +177,10 @@ export class MultiAgentRunner {
       let text = ""
 
       try {
-        run = await planner.send(buildPlannerPrompt(this.options.prompt))
+        run = await planner.send(buildPlannerPrompt(this.options.prompt), {
+          mode: "agent",
+          ...(this.options.force ? { local: { force: true } } : {}),
+        })
         this.activeRuns.add(run)
 
         for await (const event of run.stream()) {
@@ -247,6 +254,7 @@ export class MultiAgentRunner {
     try {
       const prompt = buildTaskPrompt(task, this.state)
       run = await agent.send(prompt, {
+        mode: "agent",
         ...(this.options.force ? { local: { force: true } } : {}),
       })
       this.activeRuns.add(run)
@@ -383,9 +391,14 @@ export class MultiAgentRunner {
   private createAgent(name: string): Promise<SDKAgent> {
     return Agent.create({
       apiKey: this.options.apiKey,
+      mode: "agent",
       name,
       model: this.options.model,
       local: {
+        customTools: createWorkspaceCustomTools(
+          this.options.cwd,
+          this.options.sandboxOptions
+        ),
         cwd: this.options.cwd,
         ...(this.options.sandboxOptions
           ? { sandboxOptions: this.options.sandboxOptions }
@@ -425,6 +438,9 @@ function buildTaskPrompt(task: MultiAgentTaskState, run: MultiAgentRunState) {
     "",
     "Coordination rules:",
     "- Focus only on this subtask.",
+    "- For project overview or analysis tasks, call workspace_project_snapshot once before reading individual files.",
+    "- For local workspace access, prefer custom MCP tools workspace_read_file, workspace_list_files, workspace_grep, and workspace_shell over built-in file/shell tools.",
+    "- Call workspace_* tools one at a time; wait for a result before issuing the next custom MCP call.",
     "- Preserve unrelated user work.",
     "- Only edit files if this subtask explicitly asks for implementation or file changes.",
     "- If this is a read-only task, inspect and report findings without changing files.",

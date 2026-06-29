@@ -2,6 +2,8 @@
 .DS_Store
 .idea/
 .cursor/
+.coding-agent/
+.session/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json

@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process"
+import { readdirSync, readFileSync, statSync } from "node:fs"
+import path from "node:path"
 import {
   Agent,
   Cursor,
@@ -6,9 +8,21 @@ import {
   type Run,
   type RunResult,
   type SDKAgent,
+  type SDKCustomTool,
+  type SDKJsonValue,
   type SDKMessage,
   type SDKModel,
 } from "@cursor/sdk"
+import {
+  SESSION_MEMORY_JSON_SCHEMA,
+  SessionMemoryManager,
+  contextEntriesToText,
+  createFallbackSessionMemorySummary,
+  parseSessionMemorySummary,
+  type SessionMemoryEntry,
+  type SessionMemoryPromptContext,
+  type SessionMemorySnapshot,
+} from "./session-memory.js"
 
 export type AgentEvent =
   | { type: "assistant_delta"; text: string }
@@ -27,22 +41,51 @@ export type AgentEvent =
       callId?: string
       name: string
       params?: string
+      result?: string
       status: string
     }
-  | { type: "status"; status: string; message?: string }
+  | { type: "status"; status: string; message?: string; errorCode?: string }
   | { type: "task"; status?: string; text?: string }
-  | { type: "result"; status: string; durationMs?: number; usage?: TokenUsage }
+  | {
+      type: "result"
+      status: string
+      durationMs?: number
+      usage?: TokenUsage
+      message?: string
+      errorCode?: string
+    }
 
 export type ModelChoice = {
   label: string
   value: ModelSelection
   description?: string
+  contextWindowTokens?: number
+  contextWindowSource?: ModelContextSource
 }
 
 export type TokenUsage = {
   inputTokens?: number
   outputTokens?: number
 }
+
+export type ContextUsage = {
+  charsPerToken: number
+  contextWindowKind: "model" | "local"
+  localBudgetChars: number
+  localBudgetTokens: number
+  maxChars: number
+  maxTokens: number
+  modelContextSource?: ModelContextSource
+  modelMaxTokens?: number
+  percentRemaining: number
+  percentUsed: number
+  remainingChars: number
+  remainingTokens: number
+  usedChars: number
+  usedTokens: number
+}
+
+export type ModelContextSource = "catalog" | "description" | "model-id" | "unknown"
 
 export type ExecutionMode = "cloud" | "local"
 
@@ -68,15 +111,13 @@ export type CompactContextResult =
     }
   | { compacted: false; reason: string; message: string }
 
-export type ContextEntry = {
-  role: "assistant" | "result" | "status" | "task" | "tool" | "user"
-  text: string
-}
+export type ContextEntry = SessionMemoryEntry
 
 export type CodingAgentSessionSnapshot = {
   contextSummary: string
   executionMode: ExecutionMode
   history: ContextEntry[]
+  memory?: SessionMemorySnapshot
   model: ModelSelection
 }
 
@@ -114,6 +155,11 @@ export type CancelRunResult =
 const AGENT_INSTRUCTIONS = [
   "You are a lightweight coding agent running from a terminal.",
   "Work in the configured workspace.",
+  "For project overview or analysis tasks, call workspace_project_snapshot once before reading individual files.",
+  "For local workspace access, prefer the custom MCP tools workspace_read_file, workspace_list_files, workspace_grep, and workspace_shell. Use them when built-in Read, Glob, Grep, Shell, or Task tools fail or return no output.",
+  "If the workspace_* tools are not directly visible, discover them through the custom-user-tools MCP server before declaring workspace access unavailable.",
+  "Call workspace_* tools one at a time; wait for a result before issuing the next custom MCP call.",
+  "Do not use Task subagents for basic local file inspection; inspect the current workspace directly with the workspace_* tools.",
   "Help the user inspect, edit, and validate code with small focused changes.",
   "Before changing files, understand the surrounding code and preserve unrelated user work.",
   "Do not claim file reading, search, or shell tools are unavailable unless an actual tool error proves it.",
@@ -127,8 +173,17 @@ const COMPACTION_INSTRUCTIONS = [
   "Produce concise carry-forward memory, not a narrative.",
   "Preserve concrete file paths, commands, decisions, requirements, test results, unresolved issues, and next steps.",
   "Drop redundant tool chatter and transient status updates.",
+  "Return strict JSON only, with no Markdown fences or explanatory prose.",
   "Do not inspect or modify files. Only summarize the transcript provided below.",
 ].join("\n")
+
+const WORKSPACE_TOOL_MAX_OUTPUT_CHARS = 20_000
+const WORKSPACE_TOOL_MAX_ENTRIES = 300
+const WORKSPACE_TOOL_SHELL_TIMEOUT_MS = 30_000
+const RUN_STREAM_IDLE_TIMEOUT_MS = 120_000
+
+const ESTIMATED_CHARS_PER_TOKEN = 4
+const MODEL_CONTEXT_USABLE_RATIO = 0.85
 
 export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
   enabled: true,
@@ -142,13 +197,12 @@ export class CodingAgentSession {
   private agent: Promise<SDKAgent> | null = null
   private agentKey: string | null = null
   private cloudRepository: CloudRepository | null = null
-  private contextSummary = ""
   private currentRun: Run | null = null
   private apiKey: string
   private readonly context: ContextCompactionOptions
   private readonly cwd: string
   private readonly force: boolean
-  private history: ContextEntry[] = []
+  private readonly memory: SessionMemoryManager
   private mode: ExecutionMode
   private modelSelection: ModelSelection
   private readonly sandboxOptions?: LocalSandboxOptions
@@ -156,10 +210,9 @@ export class CodingAgentSession {
   constructor(options: CodingAgentSessionOptions) {
     this.apiKey = options.apiKey
     this.context = normalizeContextOptions(options.context)
-    this.contextSummary = stringOrEmpty(options.initialState?.contextSummary)
-    this.cwd = options.cwd
+    this.cwd = path.resolve(options.cwd)
     this.force = options.force
-    this.history = normalizeHistoryEntries(options.initialState?.history)
+    this.memory = new SessionMemoryManager(this.context, options.initialState)
     this.mode = options.initialState?.executionMode ?? options.executionMode ?? "local"
     this.modelSelection = options.initialState?.model ?? options.model
     this.sandboxOptions = options.sandboxOptions
@@ -171,6 +224,10 @@ export class CodingAgentSession {
 
   get executionMode() {
     return this.mode
+  }
+
+  get workspaceCwd() {
+    return this.cwd
   }
 
   get executionTarget() {
@@ -202,7 +259,7 @@ export class CodingAgentSession {
   async listModels(): Promise<ModelChoice[]> {
     const models = await Cursor.models.list({ apiKey: this.apiKey })
     const choices = disambiguateGlobalDuplicateLabels(
-      dedupeModelChoices(models.flatMap(modelToChoices))
+      dedupeModelChoices(models.map(modelToChoice))
     )
 
     return choices.length > 0
@@ -210,29 +267,27 @@ export class CodingAgentSession {
       : [{ label: this.modelSelection.id, value: this.modelSelection }]
   }
 
-  async reset() {
-    this.contextSummary = ""
-    this.history = []
-    await this.disposeAgent()
-  }
-
   addExternalSummary(summary: string) {
-    const text = summary.trim()
-    if (!text) {
-      return
-    }
-
-    this.contextSummary = [this.contextSummary, text].filter(Boolean).join("\n\n")
-    this.history.push({ role: "result", text })
+    this.memory.addExternalSummary(summary)
   }
 
   snapshot(): CodingAgentSessionSnapshot {
+    const memory = this.memory.snapshot()
     return {
-      contextSummary: this.contextSummary,
+      contextSummary: memory.summaryText,
       executionMode: this.mode,
-      history: this.history.map((entry) => ({ ...entry })),
+      history: memory.recentEntries.map((entry) => ({ ...entry })),
+      memory,
       model: this.modelSelection,
     }
+  }
+
+  contextUsage(extraPrompt = ""): ContextUsage {
+    return createContextUsage(
+      this.estimateContextChars(extraPrompt),
+      this.context.maxHistoryChars,
+      inferModelContextInfo(this.modelSelection)
+    )
   }
 
   async setExecutionMode(mode: ExecutionMode) {
@@ -256,6 +311,14 @@ export class CodingAgentSession {
   }
 
   async dispose() {
+    await this.disposeAgent()
+  }
+
+  async refreshAgent() {
+    if (this.currentRun) {
+      throw new Error("Wait for the current run to finish before refreshing agent.")
+    }
+
     await this.disposeAgent()
   }
 
@@ -311,7 +374,7 @@ export class CodingAgentSession {
     throw result.error
   }
 
-  async compactContext({
+  private async compactContext({
     force = false,
     onEvent,
     reason,
@@ -322,7 +385,7 @@ export class CodingAgentSession {
       return { compacted: false, reason, message }
     }
 
-    const plan = this.createCompactionPlan(force)
+    const plan = this.memory.createCompactionPlan(force)
 
     if (!plan) {
       const message = "No conversation history is available to compact."
@@ -340,17 +403,26 @@ export class CodingAgentSession {
     })
 
     try {
-      const summary = await this.createContextSummary(plan.entriesToCompact, reason)
-      this.contextSummary = clampText(summary, this.context.summaryMaxChars)
-      this.history = plan.retainedEntries
+      const output = await this.createContextSummary(
+        plan.entriesToCompact,
+        plan.previousSummaryText,
+        reason
+      )
+      this.memory.commitCompaction({
+        output,
+        plan,
+        reason,
+        status: "success",
+      })
       await this.disposeAgent()
+      const summaryChars = output.summaryText.length
 
       const result = {
         compacted: true as const,
         reason,
         originalChars: plan.originalChars,
         retainedChars: plan.retainedChars,
-        summaryChars: this.contextSummary.length,
+        summaryChars,
       }
 
       onEvent?.({
@@ -365,13 +437,18 @@ export class CodingAgentSession {
 
       return result
     } catch (error) {
-      const fallback = createFallbackSummary(
-        this.contextSummary,
-        plan.entriesToCompact,
-        this.context.summaryMaxChars
-      )
-      this.contextSummary = fallback
-      this.history = plan.retainedEntries
+      const fallback = createFallbackSessionMemorySummary({
+        entries: plan.entriesToCompact,
+        existingSummary: plan.previousSummaryText,
+        maxChars: this.context.summaryMaxChars,
+      })
+      this.memory.commitCompaction({
+        errorMessage: getErrorMessage(error),
+        output: fallback,
+        plan,
+        reason,
+        status: "fallback",
+      })
       await this.disposeAgent()
 
       onEvent?.({
@@ -381,7 +458,7 @@ export class CodingAgentSession {
         message: `LLM summary failed; used deterministic fallback. ${getErrorMessage(error)}`,
         originalChars: plan.originalChars,
         retainedChars: plan.retainedChars,
-        summaryChars: this.contextSummary.length,
+        summaryChars: fallback.summaryText.length,
       })
 
       return {
@@ -389,7 +466,7 @@ export class CodingAgentSession {
         reason,
         originalChars: plan.originalChars,
         retainedChars: plan.retainedChars,
-        summaryChars: this.contextSummary.length,
+        summaryChars: fallback.summaryText.length,
       }
     }
   }
@@ -409,14 +486,28 @@ export class CodingAgentSession {
 
     try {
       const agent = await this.getAgent()
-      run = await agent.send(buildPrompt(prompt, this.contextSummary), {
+      const memoryContext = this.memory.buildPromptContext()
+      this.memory.recordPromptSnapshot(prompt, memoryContext)
+      run = await agent.send(buildPrompt(prompt, memoryContext), {
+        mode: "agent",
         ...(this.mode === "local" ? { model: this.modelSelection } : {}),
         ...(this.mode === "local" && this.force ? { local: { force: true } } : {}),
       })
 
       this.currentRun = run
 
-      for await (const event of run.stream()) {
+      const stream = run.stream()[Symbol.asyncIterator]()
+      while (true) {
+        const next = await nextSdkMessageWithIdleTimeout(
+          stream,
+          RUN_STREAM_IDLE_TIMEOUT_MS
+        )
+
+        if (next.done) {
+          break
+        }
+
+        const event = next.value
         sawEvent = true
         emitSdkMessage(event, (agentEvent) => {
           if (isAgentWorkEvent(agentEvent)) {
@@ -448,6 +539,10 @@ export class CodingAgentSession {
       commitHistory = true
       return { ok: true }
     } catch (error) {
+      if (run && isRunIdleTimeoutError(error)) {
+        await cancelRunWithTimeout(run, 5000)
+      }
+
       if (run && sawEvent && isRecoverableStreamCloseError(error)) {
         if (isHttp2StreamFrameError(error)) {
           commitHistory = sawEvent && !isLikelyContextLimitError(error)
@@ -494,7 +589,7 @@ export class CodingAgentSession {
       }
 
       if (commitHistory) {
-        this.appendHistory(recorder.entries())
+        this.memory.appendEntries(recorder.entries())
       }
     }
   }
@@ -502,6 +597,7 @@ export class CodingAgentSession {
   private createAgent() {
     const options = {
       apiKey: this.apiKey || undefined,
+      mode: "agent" as const,
       name: "Lightweight coding agent",
       model: this.modelSelection,
     }
@@ -523,6 +619,7 @@ export class CodingAgentSession {
     return Agent.create({
       ...options,
       local: {
+        customTools: createWorkspaceCustomTools(this.cwd, this.sandboxOptions),
         cwd: this.cwd,
         ...(this.sandboxOptions ? { sandboxOptions: this.sandboxOptions } : {}),
       },
@@ -563,10 +660,6 @@ export class CodingAgentSession {
     return this.agent
   }
 
-  private async replaceAgent() {
-    await this.disposeAgent()
-  }
-
   private async disposeAgent() {
     const previousAgent = this.agent
     this.agent = null
@@ -586,17 +679,16 @@ export class CodingAgentSession {
   }
 
   private currentAgentKey() {
-    const modelKey =
-      this.mode === "cloud" ? modelSelectionKey(this.modelSelection) : undefined
-    return JSON.stringify({ mode: this.mode, model: modelKey })
-  }
-
-  private appendHistory(entries: ContextEntry[]) {
-    this.history.push(...entries.filter((entry) => entry.text.trim()))
+    return JSON.stringify({
+      cwd: this.mode === "local" ? this.cwd : undefined,
+      mode: this.mode,
+      model: modelSelectionKey(this.modelSelection),
+      sandboxOptions: this.mode === "local" ? this.sandboxOptions : undefined,
+    })
   }
 
   private canCompactContext() {
-    return this.history.length > 0 || Boolean(this.contextSummary)
+    return this.memory.canCompact()
   }
 
   private async compactContextIfNeeded(
@@ -609,55 +701,38 @@ export class CodingAgentSession {
 
     const estimatedChars = this.estimateContextChars(prompt)
 
-    if (estimatedChars <= this.context.maxHistoryChars) {
+    const maxHistoryChars = this.effectiveMaxHistoryChars()
+
+    if (estimatedChars <= maxHistoryChars) {
       return
     }
 
     await this.compactContext({
       onEvent,
-      reason: `estimated context ${estimatedChars} chars exceeded ${this.context.maxHistoryChars}`,
+      reason: `estimated context ${estimatedChars} chars exceeded ${maxHistoryChars}`,
     })
   }
 
   private estimateContextChars(extraPrompt = "") {
-    return (
-      this.contextSummary.length +
-      contextEntriesToText(this.history).length +
-      extraPrompt.length
-    )
+    return this.memory.estimateContextChars(extraPrompt)
   }
 
-  private createCompactionPlan(force: boolean) {
-    if (!this.history.length) {
-      return undefined
-    }
-
-    const retainedEntries = takeRecentEntries(
-      this.history,
-      this.context.retainRecentChars
-    )
-    const retainedCount = retainedEntries.length
-    const compactableCount = this.history.length - retainedCount
-    const entriesToCompact =
-      compactableCount > 0 ? this.history.slice(0, compactableCount) : this.history
-    const finalRetainedEntries = compactableCount > 0 ? retainedEntries : []
-    const originalChars = this.estimateContextChars()
-
-    if (!force && entriesToCompact.length === 0) {
-      return undefined
-    }
-
-    return {
-      entriesToCompact,
-      originalChars,
-      retainedChars: contextEntriesToText(finalRetainedEntries).length,
-      retainedEntries: finalRetainedEntries,
-    }
+  private effectiveMaxHistoryChars() {
+    return createContextUsage(
+      0,
+      this.context.maxHistoryChars,
+      inferModelContextInfo(this.modelSelection)
+    ).maxChars
   }
 
-  private async createContextSummary(entries: ContextEntry[], reason: string) {
+  private async createContextSummary(
+    entries: ContextEntry[],
+    existingSummary: string,
+    reason: string
+  ) {
     const summaryAgent = await Agent.create({
       apiKey: this.apiKey,
+      mode: "agent",
       name: "Context compactor",
       model: this.modelSelection,
       local: {
@@ -672,12 +747,13 @@ export class CodingAgentSession {
       )
       const run = await summaryAgent.send(
         buildCompactionPrompt({
-          existingSummary: this.contextSummary,
+          existingSummary,
           maxSummaryChars: this.context.summaryMaxChars,
           reason,
           transcript,
         }),
         {
+          mode: "agent",
           model: this.modelSelection,
           ...(this.force ? { local: { force: true } } : {}),
         }
@@ -695,28 +771,272 @@ export class CodingAgentSession {
         throw new Error("Compactor returned an empty summary.")
       }
 
-      return summary
+      return parseSessionMemorySummary(summary, this.context.summaryMaxChars)
     } finally {
       await summaryAgent[Symbol.asyncDispose]()
     }
   }
 }
 
-export function buildPrompt(prompt: string, contextSummary = "") {
+export function buildPrompt(
+  prompt: string,
+  memoryContext: SessionMemoryPromptContext = {
+    recentEntries: [],
+    recentText: "",
+    summaryText: "",
+  }
+) {
   const parts = [AGENT_INSTRUCTIONS]
+  const summary = memoryContext.summaryText.trim()
+  const recentText = memoryContext.recentText.trim()
 
-  if (contextSummary.trim()) {
+  if (summary) {
     parts.push(
       "",
-      "Compressed prior context:",
-      contextSummary.trim(),
+      "Session memory summary:",
+      summary,
       "",
-      "Use the compressed prior context to continue the same task history. If it conflicts with current workspace contents, verify against the workspace."
+      "Use the session memory summary to continue this same session. If it conflicts with current workspace contents, verify against the workspace."
+    )
+  }
+
+  if (recentText) {
+    parts.push(
+      "",
+      "Recent conversation:",
+      recentText,
+      "",
+      "Use the recent conversation as the uncompressed tail of this same session."
     )
   }
 
   parts.push("", "User task:", prompt)
   return parts.join("\n")
+}
+
+export function createWorkspaceCustomTools(
+  cwd: string,
+  sandboxOptions?: LocalSandboxOptions
+): Record<string, SDKCustomTool> {
+  const root = path.resolve(cwd)
+
+  return {
+    workspace_project_snapshot: {
+      description:
+        "Collect a concise project overview from the configured workspace: root listing, package.json, README, key config files, and src tree. Use this first for project analysis tasks.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          maxBytesPerFile: {
+            type: "number",
+            description: "Maximum bytes per text file. Defaults to 12000.",
+          },
+          maxSrcEntries: {
+            type: "number",
+            description: "Maximum src entries. Defaults to 300.",
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: (args) =>
+        createWorkspaceProjectSnapshot(root, {
+          maxBytesPerFile: boundedNumberArg(args, "maxBytesPerFile", 12_000, 1, 80_000),
+          maxSrcEntries: boundedNumberArg(
+            args,
+            "maxSrcEntries",
+            WORKSPACE_TOOL_MAX_ENTRIES,
+            1,
+            2000
+          ),
+        }),
+    },
+    workspace_read_file: {
+      description:
+        "Read a UTF-8 text file from the configured workspace. Use this when built-in Read fails.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative or absolute file path." },
+          maxBytes: {
+            type: "number",
+            description: "Maximum bytes to return. Defaults to 20000.",
+          },
+        },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      execute: (args) => {
+        const filePath = resolveWorkspacePath(root, requiredStringArg(args, "path"))
+        const maxBytes = boundedNumberArg(
+          args,
+          "maxBytes",
+          WORKSPACE_TOOL_MAX_OUTPUT_CHARS,
+          1,
+          200_000
+        )
+        const stat = statSync(filePath)
+
+        if (!stat.isFile()) {
+          throw new Error(`Path is not a file: ${formatWorkspacePath(root, filePath)}`)
+        }
+
+        const buffer = readFileSync(filePath)
+        const truncated = buffer.length > maxBytes
+        return {
+          path: formatWorkspacePath(root, filePath),
+          bytes: buffer.length,
+          truncated,
+          content: buffer.subarray(0, maxBytes).toString("utf8"),
+        }
+      },
+    },
+    workspace_list_files: {
+      description:
+        "List files and directories inside the configured workspace. Use this when built-in Glob fails.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description: "Relative or absolute directory path. Defaults to workspace root.",
+          },
+          recursive: {
+            type: "boolean",
+            description: "Whether to recursively list descendants. Defaults to false.",
+          },
+          maxEntries: {
+            type: "number",
+            description: "Maximum entries to return. Defaults to 300.",
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: (args) => {
+        const targetPath = resolveWorkspacePath(
+          root,
+          optionalStringArg(args, "path") || "."
+        )
+        const maxEntries = boundedNumberArg(
+          args,
+          "maxEntries",
+          WORKSPACE_TOOL_MAX_ENTRIES,
+          1,
+          2000
+        )
+        const recursive = booleanArg(args, "recursive", false)
+        const entries = listWorkspaceEntries(root, targetPath, recursive, maxEntries)
+        return {
+          path: formatWorkspacePath(root, targetPath),
+          recursive,
+          count: entries.length,
+          truncated: entries.length >= maxEntries,
+          entries,
+        }
+      },
+    },
+    workspace_grep: {
+      description:
+        "Search text in the configured workspace using ripgrep. Use this when built-in Grep fails.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Regular expression to search for." },
+          path: {
+            type: "string",
+            description: "Relative or absolute file/directory path. Defaults to workspace root.",
+          },
+          glob: {
+            type: "string",
+            description: "Optional ripgrep glob, for example **/*.ts.",
+          },
+          ignoreCase: { type: "boolean", description: "Case-insensitive search." },
+          maxMatches: {
+            type: "number",
+            description: "Maximum matching lines to return. Defaults to 100.",
+          },
+        },
+        required: ["pattern"],
+        additionalProperties: false,
+      },
+      execute: (args) => {
+        const pattern = requiredStringArg(args, "pattern")
+        const targetPath = resolveWorkspacePath(
+          root,
+          optionalStringArg(args, "path") || "."
+        )
+        const maxMatches = boundedNumberArg(args, "maxMatches", 100, 1, 1000)
+        const results = grepWorkspace({
+          glob: optionalStringArg(args, "glob"),
+          ignoreCase: booleanArg(args, "ignoreCase", false),
+          maxMatches,
+          pattern,
+          root,
+          targetPath,
+        })
+
+        return {
+          path: formatWorkspacePath(root, targetPath),
+          pattern,
+          count: results.length,
+          truncated: results.length >= maxMatches,
+          matches: results,
+        }
+      },
+    },
+    workspace_shell: {
+      description:
+        "Run a shell command in the configured workspace. Use this when built-in Shell returns no output.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to run." },
+          workingDirectory: {
+            type: "string",
+            description: "Relative or absolute working directory. Defaults to workspace root.",
+          },
+          timeoutMs: {
+            type: "number",
+            description: "Timeout in milliseconds. Defaults to 30000.",
+          },
+          maxOutputBytes: {
+            type: "number",
+            description: "Maximum stdout/stderr bytes to return. Defaults to 20000.",
+          },
+        },
+        required: ["command"],
+        additionalProperties: false,
+      },
+      execute: (args) => {
+        if (sandboxOptions?.enabled) {
+          throw new Error(
+            "workspace_shell is disabled while sandbox mode is enabled. Restart with --no-sandbox or use workspace_read_file/workspace_list_files/workspace_grep."
+          )
+        }
+
+        const command = requiredStringArg(args, "command")
+        const workingDirectory = resolveWorkspacePath(
+          root,
+          optionalStringArg(args, "workingDirectory") || "."
+        )
+        const timeoutMs = boundedNumberArg(
+          args,
+          "timeoutMs",
+          WORKSPACE_TOOL_SHELL_TIMEOUT_MS,
+          100,
+          120_000
+        )
+        const maxOutputBytes = boundedNumberArg(
+          args,
+          "maxOutputBytes",
+          WORKSPACE_TOOL_MAX_OUTPUT_CHARS,
+          1,
+          200_000
+        )
+
+        return runWorkspaceShell(root, workingDirectory, command, timeoutMs, maxOutputBytes)
+      },
+    },
+  }
 }
 
 function normalizeContextOptions(
@@ -750,41 +1070,552 @@ function normalizeContextOptions(
   }
 }
 
+function createContextUsage(
+  usedCharsValue: number,
+  localMaxCharsValue: number,
+  modelContext: ModelContextInfo = { source: "unknown" }
+): ContextUsage {
+  const usedChars = Math.max(0, Math.ceil(usedCharsValue))
+  const localBudgetChars = Math.max(1, Math.ceil(localMaxCharsValue))
+  const localBudgetTokens = estimateTokenCount(localBudgetChars)
+  const modelMaxTokens = positiveInteger(modelContext.tokens)
+  const modelBudgetChars = modelMaxTokens
+    ? Math.max(
+        1,
+        Math.floor(modelMaxTokens * MODEL_CONTEXT_USABLE_RATIO) *
+          ESTIMATED_CHARS_PER_TOKEN
+      )
+    : 0
+  const maxChars = modelBudgetChars || localBudgetChars
+  const remainingChars = Math.max(0, maxChars - usedChars)
+  const percentUsed = Math.min(100, Math.round((usedChars / maxChars) * 100))
+  const percentRemaining = Math.max(0, 100 - percentUsed)
+
+  return {
+    charsPerToken: ESTIMATED_CHARS_PER_TOKEN,
+    contextWindowKind: modelBudgetChars ? "model" : "local",
+    localBudgetChars,
+    localBudgetTokens,
+    maxChars,
+    maxTokens: estimateTokenCount(maxChars),
+    modelContextSource: modelContext.source === "unknown" ? undefined : modelContext.source,
+    modelMaxTokens: modelMaxTokens || undefined,
+    percentRemaining,
+    percentUsed,
+    remainingChars,
+    remainingTokens: estimateTokenCount(remainingChars),
+    usedChars,
+    usedTokens: estimateTokenCount(usedChars),
+  }
+}
+
+function estimateTokenCount(chars: number) {
+  return Math.ceil(Math.max(0, chars) / ESTIMATED_CHARS_PER_TOKEN)
+}
+
+type ModelContextInfo = {
+  source: ModelContextSource
+  tokens?: number
+}
+
+function inferModelContextInfo(model: ModelSelection | SDKModel | null | undefined): ModelContextInfo {
+  if (!model) return { source: "unknown" }
+
+  const record = model as unknown as Record<string, unknown>
+  const catalogTokens = firstPositiveInteger([
+    record.contextWindowTokens,
+    record.contextWindow,
+    record.maxContextTokens,
+    record.maxInputTokens,
+    record.inputTokenLimit,
+    record.contextLength,
+    record.tokenLimit,
+  ])
+  if (catalogTokens) return { source: "catalog", tokens: catalogTokens }
+
+  const textTokens = inferContextTokensFromText([
+    record.displayName,
+    record.description,
+    record.id,
+    Array.isArray(record.aliases) ? record.aliases.join(" ") : "",
+  ])
+  if (textTokens) return { source: "description", tokens: textTokens }
+
+  const idTokens = inferContextTokensFromModelId(String(record.id || ""))
+  if (idTokens) return { source: "model-id", tokens: idTokens }
+
+  return { source: "unknown" }
+}
+
+function inferContextTokensFromText(values: unknown[]) {
+  const text = values.map((value) => String(value || "")).join(" ")
+  if (!text.trim()) return 0
+
+  const contextualPatterns = [
+    /(\d+(?:\.\d+)?)\s*(m|million)\s*(?:token|tokens|context|ctx|window)/i,
+    /(\d+(?:\.\d+)?)\s*k\s*(?:token|tokens|context|ctx|window)/i,
+    /(\d{4,})\s*(?:token|tokens|context|ctx|window)/i,
+    /(?:token|tokens|context|ctx|window)\D{0,24}(\d+(?:\.\d+)?)\s*(m|million|k)?/i,
+  ]
+
+  for (const pattern of contextualPatterns) {
+    const match = pattern.exec(text)
+    const tokens = tokensFromMatch(match)
+    if (tokens) return tokens
+  }
+
+  return 0
+}
+
+function inferContextTokensFromModelId(id: string) {
+  const normalized = id.toLowerCase()
+  const explicit = inferContextTokensFromText([normalized.replace(/[-_]/g, " ")])
+  if (explicit) return explicit
+
+  if (/composer[-_ ]?2/.test(normalized)) return 200_000
+  if (/claude/.test(normalized)) return 200_000
+  if (/gemini/.test(normalized)) return 1_000_000
+  if (/gpt[-_ ]?4\.1/.test(normalized)) return 1_000_000
+  if (/gpt[-_ ]?4o/.test(normalized)) return 128_000
+  if (/\bo[34](?:[-_]|$)/.test(normalized)) return 200_000
+
+  return 0
+}
+
+function tokensFromMatch(match: RegExpExecArray | null) {
+  if (!match) return 0
+  const number = Number(match[1])
+  if (!Number.isFinite(number) || number <= 0) return 0
+  const unit = String(match[2] || "").toLowerCase()
+  const multiplier =
+    unit === "m" || unit === "million"
+      ? 1_000_000
+      : unit === "k"
+        ? 1_000
+        : 1
+  const tokens = Math.round(number * multiplier)
+  return tokens >= 1_000 ? tokens : 0
+}
+
+function firstPositiveInteger(values: unknown[]) {
+  for (const value of values) {
+    const number = positiveInteger(value)
+    if (number) return number
+  }
+  return 0
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0
+}
+
 function positiveIntegerOrDefault(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
 }
 
-function stringOrEmpty(value: unknown) {
-  return typeof value === "string" ? value : ""
+class RunStreamIdleTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(
+      `Agent run produced no SDK events for ${formatDuration(timeoutMs)}; cancelled the stalled run.`
+    )
+    this.name = "RunStreamIdleTimeoutError"
+  }
 }
 
-function normalizeHistoryEntries(
-  entries: ContextEntry[] | undefined
-): ContextEntry[] {
-  if (!Array.isArray(entries)) {
-    return []
+function isRunIdleTimeoutError(error: unknown) {
+  return error instanceof RunStreamIdleTimeoutError
+}
+
+function nextSdkMessageWithIdleTimeout(
+  stream: AsyncIterator<SDKMessage>,
+  timeoutMs: number
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+
+  return Promise.race([
+    stream.next(),
+    new Promise<IteratorResult<SDKMessage>>((_, reject) => {
+      timeout = setTimeout(
+        () => reject(new RunStreamIdleTimeoutError(timeoutMs)),
+        timeoutMs
+      )
+      timeout.unref?.()
+    }),
+  ]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+  })
+}
+
+async function cancelRunWithTimeout(run: Run, timeoutMs: number) {
+  if (!run.supports("cancel")) {
+    return
   }
 
-  return entries
-    .filter(
-      (entry): entry is ContextEntry =>
-        Boolean(entry) &&
-        isContextEntryRole(entry.role) &&
-        typeof entry.text === "string" &&
-        entry.text.trim().length > 0
-    )
-    .map((entry) => ({ role: entry.role, text: entry.text }))
+  await Promise.race([
+    run.cancel().catch(() => undefined),
+    new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, timeoutMs)
+      timeout.unref?.()
+    }),
+  ])
 }
 
-function isContextEntryRole(value: unknown): value is ContextEntry["role"] {
-  return (
-    value === "assistant" ||
-    value === "result" ||
-    value === "status" ||
-    value === "task" ||
-    value === "tool" ||
-    value === "user"
+function resolveWorkspacePath(root: string, inputPath: string) {
+  const trimmed = inputPath.trim()
+  if (!trimmed) {
+    throw new Error("Path cannot be empty.")
+  }
+
+  const resolved = path.resolve(path.isAbsolute(trimmed) ? trimmed : path.join(root, trimmed))
+  const relative = path.relative(root, resolved)
+
+  if (relative === "") {
+    return resolved
+  }
+
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Path is outside workspace: ${inputPath}`)
+  }
+
+  return resolved
+}
+
+function formatWorkspacePath(root: string, resolvedPath: string) {
+  const relative = path.relative(root, resolvedPath)
+  return relative ? relative : "."
+}
+
+function createWorkspaceProjectSnapshot(
+  root: string,
+  options: { maxBytesPerFile: number; maxSrcEntries: number }
+) {
+  const rootEntries = listWorkspaceEntries(
+    root,
+    root,
+    false,
+    WORKSPACE_TOOL_MAX_ENTRIES
   )
+  const srcPath = path.join(root, "src")
+  const srcStat = safeStat(srcPath)
+  const srcEntries =
+    srcStat?.isDirectory() ?? false
+      ? listWorkspaceEntries(root, srcPath, true, options.maxSrcEntries)
+      : []
+  const candidateFiles = [
+    "package.json",
+    "README.md",
+    "vite.config.ts",
+    "vite.config.js",
+    "webpack.config.js",
+    "tsconfig.json",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
+    "src/main.ts",
+    "src/main.js",
+    "src/App.vue",
+    "src/router/index.ts",
+    "src/router/index.js",
+  ]
+  const files = candidateFiles
+    .map((filePath) =>
+      readWorkspaceSnapshotFile(root, filePath, options.maxBytesPerFile)
+    )
+    .filter(
+      (
+        file
+      ): file is {
+        path: string
+        bytes: number
+        truncated: boolean
+        content: string
+      } => Boolean(file)
+    )
+
+  return {
+    root: ".",
+    rootEntries,
+    srcEntries,
+    files,
+  }
+}
+
+function readWorkspaceSnapshotFile(root: string, filePath: string, maxBytes: number) {
+  const resolvedPath = resolveWorkspacePath(root, filePath)
+  const stat = safeStat(resolvedPath)
+
+  if (!stat?.isFile()) {
+    return null
+  }
+
+  const buffer = readFileSync(resolvedPath)
+  return {
+    path: formatWorkspacePath(root, resolvedPath),
+    bytes: buffer.length,
+    truncated: buffer.length > maxBytes,
+    content: buffer.subarray(0, maxBytes).toString("utf8"),
+  }
+}
+
+function safeStat(filePath: string) {
+  try {
+    return statSync(filePath)
+  } catch {
+    return null
+  }
+}
+
+function requiredStringArg(args: Record<string, SDKJsonValue>, name: string) {
+  const value = args[name]
+
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Expected non-empty string argument "${name}".`)
+  }
+
+  return value
+}
+
+function optionalStringArg(args: Record<string, SDKJsonValue>, name: string) {
+  const value = args[name]
+
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`Expected string argument "${name}".`)
+  }
+
+  return value
+}
+
+function booleanArg(
+  args: Record<string, SDKJsonValue>,
+  name: string,
+  fallback: boolean
+) {
+  const value = args[name]
+
+  if (value === undefined || value === null) {
+    return fallback
+  }
+
+  if (typeof value !== "boolean") {
+    throw new Error(`Expected boolean argument "${name}".`)
+  }
+
+  return value
+}
+
+function boundedNumberArg(
+  args: Record<string, SDKJsonValue>,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number
+) {
+  const value = args[name]
+
+  if (value === undefined || value === null) {
+    return fallback
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Expected number argument "${name}".`)
+  }
+
+  return Math.max(min, Math.min(max, Math.floor(value)))
+}
+
+function listWorkspaceEntries(
+  root: string,
+  targetPath: string,
+  recursive: boolean,
+  maxEntries: number
+) {
+  const targetStat = statSync(targetPath)
+
+  if (!targetStat.isDirectory()) {
+    return [formatWorkspacePath(root, targetPath)]
+  }
+
+  const entries: string[] = []
+  const visit = (directory: string) => {
+    if (entries.length >= maxEntries) {
+      return
+    }
+
+    const children = readdirSync(directory, { withFileTypes: true }).sort((left, right) => {
+      if (left.isDirectory() !== right.isDirectory()) {
+        return left.isDirectory() ? -1 : 1
+      }
+
+      return left.name.localeCompare(right.name)
+    })
+
+    for (const child of children) {
+      if (entries.length >= maxEntries) {
+        return
+      }
+
+      if (shouldSkipWorkspaceEntry(child.name)) {
+        continue
+      }
+
+      const childPath = path.join(directory, child.name)
+      const label = `${formatWorkspacePath(root, childPath)}${child.isDirectory() ? "/" : ""}`
+      entries.push(label)
+
+      if (recursive && child.isDirectory()) {
+        visit(childPath)
+      }
+    }
+  }
+
+  visit(targetPath)
+  return entries
+}
+
+function shouldSkipWorkspaceEntry(name: string) {
+  return (
+    name === ".git" ||
+    name === "node_modules" ||
+    name === "dist" ||
+    name === "build" ||
+    name === ".next" ||
+    name === ".nuxt"
+  )
+}
+
+function grepWorkspace({
+  glob,
+  ignoreCase,
+  maxMatches,
+  pattern,
+  root,
+  targetPath,
+}: {
+  glob?: string
+  ignoreCase: boolean
+  maxMatches: number
+  pattern: string
+  root: string
+  targetPath: string
+}) {
+  const args = [
+    "--line-number",
+    "--no-heading",
+    "--color",
+    "never",
+    "--glob",
+    "!node_modules/**",
+    "--glob",
+    "!.git/**",
+    "--glob",
+    "!dist/**",
+  ]
+
+  if (ignoreCase) {
+    args.push("--ignore-case")
+  }
+
+  if (glob) {
+    args.push("--glob", glob)
+  }
+
+  args.push(pattern, targetPath)
+
+  try {
+    const output = execFileSync("rg", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: WORKSPACE_TOOL_SHELL_TIMEOUT_MS,
+      maxBuffer: 2_000_000,
+    })
+
+    return output
+      .split("\n")
+      .filter(Boolean)
+      .slice(0, maxMatches)
+      .map((line) => {
+        const relativePrefix = `${root}${path.sep}`
+        return line.startsWith(relativePrefix) ? line.slice(relativePrefix.length) : line
+      })
+  } catch (error) {
+    const status = (error as { status?: number }).status
+
+    if (status === 1) {
+      return []
+    }
+
+    throw new Error(`ripgrep failed: ${getChildProcessErrorOutput(error)}`)
+  }
+}
+
+function runWorkspaceShell(
+  root: string,
+  workingDirectory: string,
+  command: string,
+  timeoutMs: number,
+  maxOutputBytes: number
+) {
+  try {
+    const stdout = execFileSync("sh", ["-lc", command], {
+      cwd: workingDirectory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      maxBuffer: Math.max(maxOutputBytes * 2, 1024),
+    })
+
+    return {
+      command,
+      workingDirectory: formatWorkspacePath(root, workingDirectory),
+      exitCode: 0,
+      stdout: clampInlineText(stdout, maxOutputBytes),
+      stderr: "",
+      truncated: stdout.length > maxOutputBytes,
+    }
+  } catch (error) {
+    const stdout = childProcessOutput(error, "stdout")
+    const stderr = childProcessOutput(error, "stderr")
+    const status = (error as { status?: number }).status
+
+    return {
+      command,
+      workingDirectory: formatWorkspacePath(root, workingDirectory),
+      exitCode: typeof status === "number" ? status : null,
+      stdout: clampInlineText(stdout, maxOutputBytes),
+      stderr: clampInlineText(stderr || getErrorMessage(error), maxOutputBytes),
+      truncated: stdout.length > maxOutputBytes || stderr.length > maxOutputBytes,
+    }
+  }
+}
+
+function getChildProcessErrorOutput(error: unknown) {
+  return (
+    [childProcessOutput(error, "stderr"), childProcessOutput(error, "stdout")]
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .join("\n") || getErrorMessage(error)
+  )
+}
+
+function childProcessOutput(error: unknown, key: "stderr" | "stdout") {
+  const value = (error as { [key: string]: unknown })[key]
+
+  if (typeof value === "string") {
+    return value
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8")
+  }
+
+  return ""
 }
 
 class RunHistoryRecorder {
@@ -803,12 +1634,15 @@ class RunHistoryRecorder {
         break
       case "tool": {
         const key = event.callId ?? event.name
+        const result =
+          event.result && event.status === "error" ? `=> ${event.result}` : undefined
         this.toolEntries.set(key, {
           role: "tool",
           text: [
             event.status,
             event.name,
             event.params ? `(${event.params})` : undefined,
+            result,
           ]
             .filter(Boolean)
             .join(" "),
@@ -819,7 +1653,9 @@ class RunHistoryRecorder {
         if (event.status === "ERROR" || event.message) {
           this.statusEntries.push({
             role: "status",
-            text: [event.status, event.message].filter(Boolean).join(" "),
+            text: [event.status, event.message, event.errorCode && `code=${event.errorCode}`]
+              .filter(Boolean)
+              .join(" "),
           })
         }
         break
@@ -836,6 +1672,8 @@ class RunHistoryRecorder {
           event.durationMs ? `duration=${formatDuration(event.durationMs)}` : undefined,
           event.usage?.inputTokens ? `input=${event.usage.inputTokens}` : undefined,
           event.usage?.outputTokens ? `output=${event.usage.outputTokens}` : undefined,
+          event.message ? `message=${event.message}` : undefined,
+          event.errorCode ? `code=${event.errorCode}` : undefined,
         ]
           .filter(Boolean)
           .join(" ")
@@ -860,33 +1698,6 @@ class RunHistoryRecorder {
   }
 }
 
-function takeRecentEntries(entries: ContextEntry[], maxChars: number) {
-  const retained: ContextEntry[] = []
-  let chars = 0
-
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]
-    const entryChars = contextEntryToText(entry).length
-
-    if (retained.length > 0 && chars + entryChars > maxChars) {
-      break
-    }
-
-    retained.unshift(entry)
-    chars += entryChars
-  }
-
-  return retained
-}
-
-function contextEntriesToText(entries: ContextEntry[]) {
-  return entries.map(contextEntryToText).join("\n\n")
-}
-
-function contextEntryToText(entry: ContextEntry) {
-  return `## ${entry.role}\n${entry.text.trim()}`
-}
-
 function buildCompactionPrompt({
   existingSummary,
   maxSummaryChars,
@@ -904,13 +1715,16 @@ function buildCompactionPrompt({
     `Compaction reason: ${reason}`,
     `Maximum summary length: ${maxSummaryChars} characters.`,
     "",
-    "Existing compressed memory:",
+    "Required JSON schema:",
+    SESSION_MEMORY_JSON_SCHEMA,
+    "",
+    "Existing session memory summary:",
     existingSummary.trim() || "(none)",
     "",
     "Transcript to compact:",
     transcript,
     "",
-    "Return only the updated compressed memory.",
+    "Return only the updated JSON object.",
   ].join("\n")
 }
 
@@ -930,41 +1744,102 @@ function emitRunResult(
   onEvent: (event: AgentEvent) => void
 ) {
   const usage = (result as { usage?: TokenUsage }).usage
+  const message = result.status === "error" ? summarizeRunResultError(result) : undefined
+  const errorCode = extractStringField(result, "errorCode")
   const resultEvent: AgentEvent = {
     type: "result",
     status: result.status,
     durationMs: result.durationMs,
     usage,
+    message,
+    errorCode,
   }
 
   recorder.record(resultEvent)
   onEvent(resultEvent)
 }
 
-function createFallbackSummary(
-  existingSummary: string,
-  entries: ContextEntry[],
-  maxChars: number
-) {
-  const transcript = contextEntriesToText(entries)
-  const sections = [
-    existingSummary.trim()
-      ? `Existing compressed memory:\n${existingSummary.trim()}`
-      : undefined,
-    `Deterministic compacted history:\n${clampTextMiddle(transcript, maxChars)}`,
-  ].filter(Boolean)
+function summarizeRunResultError(result: RunResult) {
+  const record = result as unknown as Record<string, unknown>
+  const detail = firstCompactDetail([
+    record.result,
+    record.error,
+    record.message,
+    record.errorMessage,
+    record.details,
+    record.detail,
+    record.reason,
+    record.errorCode,
+  ])
 
-  return clampText(sections.join("\n\n"), maxChars)
-}
-
-function clampText(value: string, maxChars: number) {
-  const text = value.trim()
-
-  if (text.length <= maxChars) {
-    return text
+  if (!detail || detail.toLowerCase() === result.status.toLowerCase()) {
+    return undefined
   }
 
-  return `${text.slice(0, Math.max(0, maxChars - 38)).trimEnd()}\n[truncated during compaction]`
+  return clampInlineText(detail, 2400)
+}
+
+function extractStringField(value: unknown, field: string) {
+  if (!value || typeof value !== "object") {
+    return undefined
+  }
+
+  const raw = (value as Record<string, unknown>)[field]
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined
+}
+
+function firstCompactDetail(values: unknown[]) {
+  for (const value of values) {
+    const text = compactErrorDetail(value)
+    if (text) {
+      return text
+    }
+  }
+
+  return undefined
+}
+
+function compactErrorDetail(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (value instanceof Error) {
+    const parts = [
+      value.name && value.name !== "Error" ? `${value.name}:` : undefined,
+      value.message,
+    ].filter(Boolean)
+    return compactInlineText(parts.join(" "))
+  }
+
+  if (typeof value === "string") {
+    return compactInlineText(value)
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value)
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>
+    const nested = firstCompactDetail([
+      record.message,
+      record.error,
+      record.errorMessage,
+      record.details,
+      record.detail,
+      record.reason,
+      record.code,
+    ])
+
+    if (nested) {
+      return nested
+    }
+
+    return compactInlineText(stringifyToolResult(value))
+  }
+
+  return compactInlineText(String(value))
 }
 
 function clampTextMiddle(value: string, maxChars: number) {
@@ -1061,59 +1936,15 @@ export function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function modelToChoices(model: SDKModel): ModelChoice[] {
-  const baseLabel = model.displayName || model.id
-  const variants = model.variants ?? []
-
-  if (variants.length === 0) {
-    return [
-      {
-        label: baseLabel,
-        value: { id: model.id },
-        description: model.description,
-      },
-    ]
+function modelToChoice(model: SDKModel): ModelChoice {
+  const context = inferModelContextInfo(model)
+  return {
+    label: model.displayName || model.id,
+    value: { id: model.id },
+    description: model.description,
+    contextWindowTokens: context.tokens,
+    contextWindowSource: context.source === "unknown" ? undefined : context.source,
   }
-
-  const choices = variants.map((variant) => ({
-    label: buildVariantLabel(model, variant.displayName),
-    value: { id: model.id, params: variant.params },
-    description: variant.description ?? model.description,
-  }))
-
-  return disambiguateDuplicateLabels(dedupeModelChoices(choices), model)
-}
-
-function buildVariantLabel(model: SDKModel, variantDisplayName: string) {
-  const baseLabel = model.displayName || model.id
-  const variantLabel = variantDisplayName.trim()
-
-  if (!variantLabel || labelsMatch(baseLabel, variantLabel)) {
-    return baseLabel
-  }
-
-  return `${baseLabel} - ${variantLabel}`
-}
-
-function disambiguateDuplicateLabels(
-  choices: ModelChoice[],
-  model: SDKModel
-): ModelChoice[] {
-  const labelCounts = choices.reduce((counts, choice) => {
-    counts.set(choice.label, (counts.get(choice.label) ?? 0) + 1)
-    return counts
-  }, new Map<string, number>())
-
-  return choices.map((choice) => {
-    if ((labelCounts.get(choice.label) ?? 0) <= 1) {
-      return choice
-    }
-
-    const paramsLabel = formatParamsLabel(choice.value.params ?? [], model)
-    return paramsLabel
-      ? { ...choice, label: `${choice.label} - ${paramsLabel}` }
-      : choice
-  })
 }
 
 function dedupeModelChoices(choices: ModelChoice[]) {
@@ -1130,6 +1961,8 @@ function dedupeModelChoices(choices: ModelChoice[]) {
 
     bySelection.set(key, {
       ...existing,
+      contextWindowSource: existing.contextWindowSource ?? choice.contextWindowSource,
+      contextWindowTokens: existing.contextWindowTokens ?? choice.contextWindowTokens,
       description: existing.description ?? choice.description,
     })
   }
@@ -1163,24 +1996,13 @@ function disambiguateGlobalDuplicateLabels(choices: ModelChoice[]) {
 }
 
 function addSelectionDetail(choice: ModelChoice) {
-  const detail = selectionDetail(choice.value)
+  const detail = choice.value.id
 
-  if (!detail || labelsMatch(choice.label, detail)) {
+  if (!detail || normalizeLabel(choice.label) === normalizeLabel(detail)) {
     return choice.label
   }
 
   return `${choice.label} - ${detail}`
-}
-
-function selectionDetail(selection: ModelSelection) {
-  if (selection.params?.length) {
-    return selection.params
-      .map((param) => labelFromId(param.value))
-      .filter(Boolean)
-      .join(", ")
-  }
-
-  return selection.id
 }
 
 function modelSelectionKey(selection: ModelSelection) {
@@ -1238,41 +2060,8 @@ function formatCloudRepository(repository: CloudRepository) {
     : repository.url
 }
 
-function formatParamsLabel(
-  params: NonNullable<ModelSelection["params"]>,
-  model: SDKModel
-) {
-  return params
-    .map((param) => {
-      const parameter = model.parameters?.find((item) => item.id === param.id)
-      const value = parameter?.values.find((item) => item.value === param.value)
-      const parameterLabel = parameter?.displayName || labelFromId(param.id)
-      const valueLabel = value?.displayName || labelFromId(param.value)
-
-      if (labelsMatch(parameterLabel, valueLabel)) {
-        return valueLabel
-      }
-
-      return `${parameterLabel}: ${valueLabel}`
-    })
-    .filter(Boolean)
-    .join(", ")
-}
-
-function labelsMatch(left: string, right: string) {
-  return normalizeLabel(left) === normalizeLabel(right)
-}
-
 function normalizeLabel(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
-}
-
-function labelFromId(id: string) {
-  return id
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
 }
 
 function emitSdkMessage(event: SDKMessage, emit: (event: AgentEvent) => void) {
@@ -1301,11 +2090,17 @@ function emitSdkMessage(event: SDKMessage, emit: (event: AgentEvent) => void) {
         callId: event.call_id,
         name: event.name,
         params: summarizeToolArgs(event.name, event.args),
+        result: summarizeToolResult(event.result, Boolean(event.truncated?.result)),
         status: event.status,
       })
       break
     case "status":
-      emit({ type: "status", status: event.status, message: event.message })
+      emit({
+        type: "status",
+        status: event.status,
+        message: event.message,
+        errorCode: extractStringField(event, "errorCode"),
+      })
       break
     case "task":
       emit({ type: "task", status: event.status, text: event.text })
@@ -1313,6 +2108,44 @@ function emitSdkMessage(event: SDKMessage, emit: (event: AgentEvent) => void) {
     default:
       break
   }
+}
+
+function summarizeToolResult(result: unknown, truncated: boolean) {
+  if (result === undefined) {
+    return undefined
+  }
+
+  const text = compactInlineText(stringifyToolResult(result))
+  if (!text) {
+    return undefined
+  }
+
+  const suffix = truncated ? " [truncated by SDK]" : ""
+  return `${clampInlineText(text, 1200 - suffix.length)}${suffix}`
+}
+
+function stringifyToolResult(result: unknown) {
+  if (typeof result === "string") {
+    return result
+  }
+
+  try {
+    return JSON.stringify(result)
+  } catch {
+    return String(result)
+  }
+}
+
+function compactInlineText(value: string) {
+  return value.replace(/\s+/g, " ").trim()
+}
+
+function clampInlineText(value: string, maxChars: number) {
+  if (value.length <= maxChars) {
+    return value
+  }
+
+  return `${value.slice(0, Math.max(0, maxChars - 24)).trimEnd()} [truncated]`
 }
 
 function summarizeToolArgs(toolName: string, args: unknown) {

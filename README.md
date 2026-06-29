@@ -13,15 +13,20 @@ Install dependencies:
 pnpm install
 ```
 
-Set an API key:
+Start the local web UI:
 
 ```bash
-export CURSOR_API_KEY="crsr_..."
+bun run dev:ui
 ```
+
+If no usable API key is already configured, the web UI shows a login-style
+screen first. Enter your Cursor API key there; the app verifies it and loads the
+available model list before showing the workspace UI.
 
 Ask for a one-shot task in the current directory:
 
 ```bash
+export CURSOR_API_KEY="crsr_..."
 bun run dev -- "Explain how this project is structured"
 ```
 
@@ -31,16 +36,13 @@ Start the TUI by omitting the prompt:
 bun run dev
 ```
 
-Start the local web UI:
-
-```bash
-bun run dev:ui
-```
-
-The web UI starts a local server, opens a browser, and uses the current
-directory as the workspace by default. Passing `--cwd /path/to/project` opens
-that project at startup, and opening or switching projects in the UI also
-switches the underlying agent process working directory.
+The web UI starts a local server and prints the URL without selecting a
+workspace or opening the browser automatically. Pass `--open` if you want the
+browser to open after startup. Open a project from the UI when you are ready to
+work in it. Passing `--cwd /path/to/project` only changes the startup directory
+used by the project picker and the current-directory shortcut; opening or
+switching projects in the UI switches the underlying agent process working
+directory.
 
 ## Context compaction
 
@@ -48,8 +50,6 @@ The CLI keeps a lightweight transcript of each TUI session. When the estimated
 conversation history grows past the configured limit, it asks a fresh Cursor SDK
 agent to summarize older turns, starts a new agent, and injects that compressed
 memory into future prompts.
-
-Inside the TUI, run `/compact` to force this manually.
 
 Useful settings:
 
@@ -156,4 +156,4 @@ C:\path\to\coding-agent-cli-0.1.0-win32-x64\code-agent-ui.cmd
 
 ## Notes
 
-Inside the TUI, type `/` to open the command menu. You can choose a model, compact context, reset the session, update the API key, or exit from there.
+Inside the TUI, type `/` to open the command menu. You can choose a model, update the API key, switch to local mode, or exit from there.
