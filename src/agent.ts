@@ -336,7 +336,13 @@ export class CodingAgentSession {
       }
     }
 
-    await run.cancel()
+    try {
+      await run.cancel()
+    } catch (error) {
+      if (!isRunCancellationError(error)) {
+        throw error
+      }
+    }
     return { cancelled: true }
   }
 
@@ -539,6 +545,16 @@ export class CodingAgentSession {
       commitHistory = true
       return { ok: true }
     } catch (error) {
+      if (isRunCancellationError(error)) {
+        commitHistory = sawEvent
+        onEvent({
+          type: "result",
+          status: "cancelled",
+          message: "Run cancelled.",
+        })
+        return { ok: true }
+      }
+
       if (run && isRunIdleTimeoutError(error)) {
         await cancelRunWithTimeout(run, 5000)
       }
@@ -1879,6 +1895,19 @@ function isHttp2StreamFrameError(error: unknown) {
   )
 }
 
+function isRunCancellationError(error: unknown) {
+  const text = getErrorText(error).toLowerCase()
+
+  return (
+    text.includes("connecterror") &&
+    text.includes("canceled") &&
+    text.includes("operation was aborted")
+  ) || (
+    text.includes("aborterror") &&
+    text.includes("operation was aborted")
+  )
+}
+
 function isContextLimitStatus(
   event: AgentEvent
 ): event is Extract<AgentEvent, { type: "status" }> & { message: string } {
@@ -1918,6 +1947,17 @@ function isLikelyContextLimitMessage(message: string) {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
+  }
+
+  return String(error)
+}
+
+function getErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = (error as { cause?: unknown }).cause
+    return [error.name, error.message, cause ? getErrorText(cause) : ""]
+      .filter(Boolean)
+      .join(" ")
   }
 
   return String(error)

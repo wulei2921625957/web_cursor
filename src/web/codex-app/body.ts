@@ -13,7 +13,7 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
       </label>
       <button id="authSubmitBtn" class="primary" type="submit">进入</button>
       <div class="toast" id="authToast"></div>
-      <div class="auth-status" id="authStatus">等待输入密钥</div>
+      <div class="auth-status" id="authStatus" role="status" aria-live="polite">等待输入密钥</div>
     </form>
   </section>
 
@@ -69,6 +69,7 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
           <form class="composer" id="composer">
             <input id="attachmentInput" type="file" multiple hidden>
             <div class="attachment-list" id="attachmentList" aria-live="polite" hidden></div>
+            <div class="queued-run-list" id="queuedRunList" aria-live="polite" hidden></div>
 	            <textarea id="prompt" placeholder="要求后续变更"></textarea>
 	            <div class="composer-footer">
 	              <div class="composer-actions">
@@ -86,11 +87,13 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 	                  <input id="multiAgentMode" type="checkbox">
 	                  <span>多 Agent</span>
 	                </label>
+	                <button class="guide-toggle" id="guideModeBtn" type="button" aria-pressed="false" title="引导纠正" hidden>引导</button>
 	                <div class="model-picker" id="modelPicker">
 	                  <select class="model-select" id="modelSelect" aria-label="选择模型">
 	                    <option value="">加载模型</option>
 	                  </select>
 	                </div>
+	                <button class="cancel-run" id="cancelBtn" type="button" aria-label="取消当前任务" title="取消当前任务" hidden>■</button>
 	                <button class="send primary" id="sendBtn" type="submit" aria-label="发送">↑</button>
 	              </div>
             </div>

@@ -19,6 +19,7 @@ export const codexAppClientScript = `    const els = {
       changesList: document.getElementById("changesList"),
       changesSummary: document.getElementById("changesSummary"),
       changeTree: document.getElementById("changeTree"),
+      cancelBtn: document.getElementById("cancelBtn"),
       composer: document.getElementById("composer"),
       conversation: document.getElementById("conversation"),
       contextMeter: document.getElementById("contextMeter"),
@@ -31,6 +32,7 @@ export const codexAppClientScript = `    const els = {
 	      messages: document.getElementById("messages"),
 	      modelPicker: document.getElementById("modelPicker"),
 	      modelSelect: document.getElementById("modelSelect"),
+	      guideModeBtn: document.getElementById("guideModeBtn"),
 	      multiAgentMode: document.getElementById("multiAgentMode"),
 	      newSessionBtn: document.getElementById("newSessionBtn"),
       openProjectBtn: document.getElementById("openProjectBtn"),
@@ -39,6 +41,7 @@ export const codexAppClientScript = `    const els = {
       projectList: document.getElementById("projectList"),
       projectToast: document.getElementById("projectToast"),
       prompt: document.getElementById("prompt"),
+      queuedRunList: document.getElementById("queuedRunList"),
       reviewCollapseBtn: document.getElementById("reviewCollapseBtn"),
       reviewResizeHandle: document.getElementById("reviewResizeHandle"),
       reviewToggleBtn: document.getElementById("reviewToggleBtn"),
@@ -52,6 +55,7 @@ export const codexAppClientScript = `    const els = {
     let state = {
       activeProject: null,
       activeProjectId: null,
+      activeRunSessionIds: [],
       activeSession: null,
       activeSessionId: null,
       activeSessionRunning: false,
@@ -67,12 +71,14 @@ export const codexAppClientScript = `    const els = {
       selectedModel: null,
     }
 	    const messagesBySession = Object.create(null)
+    const queuedRunsBySession = Object.create(null)
 	    let authBusy = false
     const streamingAssistants = new Map()
     const streamingAssistantQueues = new Map()
     const streamingMultiRuns = new Map()
     const streamingRunTimers = new Map()
     const streamingThoughts = new Map()
+    const localSessionRunRefs = new Map()
     const persistMessagesTimers = new Map()
     const ASSISTANT_STREAM_FRAME_MS = 32
     const ASSISTANT_STREAM_MAX_CHUNK = 96
@@ -91,6 +97,8 @@ export const codexAppClientScript = `    const els = {
     let currentModel = null
     let pendingAttachments = []
     let attachmentIdCounter = 0
+    let guideMode = false
+    let runIdCounter = 0
     const USER_ATTACHMENT_MESSAGE_PREFIX = "[[coding-agent-user-message-v1]]"
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
@@ -219,11 +227,13 @@ export const codexAppClientScript = `    const els = {
       for (const sessionId of Object.keys(messagesBySession)) {
         if (!liveSessionIds.has(sessionId)) {
           delete messagesBySession[sessionId]
+          delete queuedRunsBySession[sessionId]
         }
       }
       renderSidebar()
       renderHeader()
       renderMessages()
+      renderQueuedRunList()
       renderModelPicker()
       updateControls()
     }
@@ -235,6 +245,15 @@ export const codexAppClientScript = `    const els = {
         messagesBySession[targetSessionId] = []
       }
       return messagesBySession[targetSessionId]
+    }
+
+    function activeQueuedRuns(sessionId) {
+      const targetSessionId = sessionId || state.activeSessionId
+      if (!targetSessionId) return []
+      if (!queuedRunsBySession[targetSessionId]) {
+        queuedRunsBySession[targetSessionId] = []
+      }
+      return queuedRunsBySession[targetSessionId]
     }
 
     function schedulePersistMessages(sessionId) {
@@ -267,9 +286,21 @@ export const codexAppClientScript = `    const els = {
     function isSessionRunning(sessionId) {
       if (!sessionId) return false
       if ((state.runningSessionIds || []).includes(sessionId)) return true
+      if ((localSessionRunRefs.get(sessionId) || 0) > 0) return true
       for (const project of state.projects || []) {
         for (const session of project.sessions || []) {
           if (session.id === sessionId) return Boolean(session.running)
+        }
+      }
+      return false
+    }
+
+    function isSessionActivelyRunning(sessionId) {
+      if (!sessionId) return false
+      if ((state.activeRunSessionIds || []).includes(sessionId)) return true
+      for (const project of state.projects || []) {
+        for (const session of project.sessions || []) {
+          if (session.id === sessionId) return Boolean(session.activeRun)
         }
       }
       return false
@@ -285,6 +316,34 @@ export const codexAppClientScript = `    const els = {
 
     function isActiveSessionRunning() {
       return Boolean(state.activeSessionRunning || isSessionRunning(state.activeSessionId))
+    }
+
+    function isActiveSessionActivelyRunning() {
+      return isSessionActivelyRunning(state.activeSessionId)
+    }
+
+    function addLocalSessionRunRef(sessionId) {
+      if (!sessionId) return
+      localSessionRunRefs.set(sessionId, (localSessionRunRefs.get(sessionId) || 0) + 1)
+      setLocalSessionRunning(sessionId, true)
+    }
+
+    function releaseLocalSessionRunRef(sessionId) {
+      if (!sessionId) return
+      const nextCount = Math.max(0, (localSessionRunRefs.get(sessionId) || 0) - 1)
+      if (nextCount > 0) {
+        localSessionRunRefs.set(sessionId, nextCount)
+        setLocalSessionRunning(sessionId, true)
+        return
+      }
+
+      localSessionRunRefs.delete(sessionId)
+      setLocalSessionRunning(sessionId, false)
+    }
+
+    function syncSessionRunningFromLocalRefs(sessionId) {
+      if (!sessionId) return
+      setLocalSessionRunning(sessionId, (localSessionRunRefs.get(sessionId) || 0) > 0)
     }
 
     function setLocalSessionRunning(sessionId, running) {
@@ -309,31 +368,84 @@ export const codexAppClientScript = `    const els = {
       updateControls()
     }
 
+    function setLocalSessionActiveRun(sessionId, active) {
+      if (!sessionId) return
+      const ids = new Set(state.activeRunSessionIds || [])
+      if (active) ids.add(sessionId)
+      else ids.delete(sessionId)
+      state.activeRunSessionIds = Array.from(ids)
+
+      for (const project of state.projects || []) {
+        for (const session of project.sessions || []) {
+          if (session.id === sessionId) session.activeRun = active
+        }
+      }
+      if (state.activeSession && state.activeSession.id === sessionId) {
+        state.activeSession.activeRun = active
+      }
+
+      if (!active && guideMode && sessionId === state.activeSessionId) {
+        guideMode = false
+      }
+
+      renderSidebar()
+      updateControls()
+    }
+
+    function setGuideMode(enabled) {
+      guideMode = Boolean(enabled && isActiveSessionActivelyRunning())
+      els.guideModeBtn.classList.toggle("active", guideMode)
+      els.guideModeBtn.setAttribute("aria-pressed", guideMode ? "true" : "false")
+      els.guideModeBtn.title = guideMode ? "引导纠正已开启" : "引导纠正"
+      updateControls()
+    }
+
     function updateControls() {
       const hasProject = Boolean(state.activeProjectId)
       const hasSession = Boolean(state.activeSessionId)
       const busy = Boolean(state.busy)
       const activeBusy = isActiveSessionRunning()
+      const activeRunning = isActiveSessionActivelyRunning()
       const modelsLoaded = Boolean(state.modelsLoaded)
       const canPersistApiKey = Boolean(state.canPersistApiKey)
+      if (!activeRunning && guideMode) {
+        guideMode = false
+      }
       els.authSaveKeyRow.hidden = !canPersistApiKey
       els.authSaveKey.disabled = !canPersistApiKey
       if (!canPersistApiKey) {
         els.authSaveKey.checked = false
       }
+      els.authForm.classList.toggle("auth-busy", authBusy)
+      els.authForm.setAttribute("aria-busy", authBusy ? "true" : "false")
+      els.authApiKey.disabled = authBusy
+      els.authSaveKey.disabled = authBusy || !canPersistApiKey
+      els.authSubmitBtn.classList.toggle("loading", authBusy)
+      els.authSubmitBtn.textContent = authBusy ? "正在验证" : "进入"
+      els.authStatus.classList.toggle("loading", authBusy)
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
 	      els.modelSelect.disabled = activeBusy || !modelsLoaded
-	      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
-	      els.prompt.disabled = activeBusy || !hasSession || !modelsLoaded
-      els.attachmentBtn.disabled = activeBusy || !hasSession || !modelsLoaded
+      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
+	      els.prompt.disabled = !hasSession || !modelsLoaded
+      els.attachmentBtn.disabled = !hasSession || !modelsLoaded
+      els.guideModeBtn.hidden = true
+      els.guideModeBtn.disabled = true
+      els.guideModeBtn.classList.toggle("active", guideMode)
+      els.guideModeBtn.setAttribute("aria-pressed", guideMode ? "true" : "false")
+      els.guideModeBtn.title = guideMode ? "引导纠正已开启" : "引导纠正"
+      els.cancelBtn.hidden = !activeRunning
+      els.cancelBtn.disabled = !activeRunning
       els.sendBtn.classList.toggle("running", activeBusy)
-      els.sendBtn.textContent = activeBusy ? "" : "↑"
-      els.sendBtn.setAttribute("aria-label", activeBusy ? "取消任务" : "发送")
-      els.sendBtn.title = activeBusy ? "取消任务" : "发送"
+      els.sendBtn.textContent = "↑"
+      els.sendBtn.setAttribute(
+        "aria-label",
+        activeBusy ? (guideMode ? "发送引导" : "加入队列") : "发送"
+      )
+      els.sendBtn.title = activeBusy ? (guideMode ? "发送引导" : "加入队列") : "发送"
       els.sendBtn.disabled =
         !hasSession ||
         !modelsLoaded ||
-        (!activeBusy && !els.prompt.value.trim() && pendingAttachments.length === 0)
+        (!els.prompt.value.trim() && pendingAttachments.length === 0)
       els.openProjectBtn.disabled = busy
       els.authSubmitBtn.disabled = authBusy || busy || !els.authApiKey.value.trim()
       updateContextMeter()
@@ -658,8 +770,8 @@ export const codexAppClientScript = `    const els = {
     }
 
     function addAttachmentFiles(fileList) {
-      if (!state.activeSessionId || !state.modelsLoaded || isActiveSessionRunning()) {
-        setToast(els.projectToast, "请先打开项目、新建会话并等待当前任务结束后再添加附件。", true)
+      if (!state.activeSessionId || !state.modelsLoaded) {
+        setToast(els.projectToast, "请先打开项目并新建会话。", true)
         return
       }
 
@@ -733,6 +845,52 @@ export const codexAppClientScript = `    const els = {
           )
         )
       }
+    }
+
+    function renderQueuedRunList() {
+      const runs = activeQueuedRuns()
+      els.queuedRunList.textContent = ""
+      els.queuedRunList.hidden = runs.length === 0
+
+      for (const run of runs) {
+        els.queuedRunList.appendChild(createQueuedRunNode(run))
+      }
+    }
+
+    function createQueuedRunNode(run) {
+      const node = document.createElement("div")
+      node.className =
+        "queued-run-item" + (isGuideQueuedRun(run) ? " guide" : "")
+
+      const grip = document.createElement("span")
+      grip.className = "queued-run-grip"
+      grip.textContent = "⁝⋮"
+      node.appendChild(grip)
+
+      const body = document.createElement("div")
+      body.className = "queued-run-body"
+      const text = document.createElement("div")
+      text.className = "queued-run-text"
+      text.textContent = queuedRunDisplayText(run)
+      body.appendChild(text)
+
+      const parsed = parseUserAttachmentMessage(run.text)
+      if (parsed && parsed.attachments.length > 0) {
+        const meta = document.createElement("div")
+        meta.className = "queued-run-meta"
+        meta.textContent = parsed.attachments.length + " 个附件"
+        body.appendChild(meta)
+      }
+
+      node.appendChild(body)
+      appendQueuedRunActions(node, run)
+      return node
+    }
+
+    function queuedRunDisplayText(run) {
+      const parsed = parseUserAttachmentMessage(run && run.text)
+      const text = parsed ? parsed.text : String((run && run.text) || "")
+      return compactText(text) || "请查看附件。"
     }
 
     function clearPendingAttachments() {
@@ -974,7 +1132,7 @@ export const codexAppClientScript = `    const els = {
       }
 
       for (const message of messages) {
-        if (message.kind === "user") {
+        if (isUserMessage(message)) {
           flushTurn()
           appendRenderedMessage(message)
           continue
@@ -1001,9 +1159,12 @@ export const codexAppClientScript = `    const els = {
 	      if (message.kind === "assistant") {
 	        node.className = "message assistant markdown"
         renderMarkdownInto(node, message.text)
-      } else if (message.kind === "user") {
-        node.className = "message user"
-        renderUserMessageInto(node, message.text)
+      } else if (isUserMessage(message)) {
+        node.className =
+          "message user" +
+          (isGuideUserMessage(message) ? " guide" : "") +
+          (isQueuedUserMessage(message) ? " queued" : "")
+        renderUserMessageInto(node, message.text, message)
       } else {
         node.className = "message " + message.kind
         node.textContent = message.text
@@ -1011,10 +1172,24 @@ export const codexAppClientScript = `    const els = {
 	      els.messages.appendChild(node)
 	    }
 
-    function renderUserMessageInto(node, text) {
+    function renderUserMessageInto(node, text, message) {
+      const label = userMessageLabel(message)
+      if (label) {
+        const labelNode = document.createElement("div")
+        labelNode.className = "user-message-label"
+        labelNode.textContent = label
+        node.appendChild(labelNode)
+      }
+
       const parsed = parseUserAttachmentMessage(text)
       if (!parsed) {
-        node.textContent = text
+        const body = document.createElement("div")
+        body.className = "user-message-text"
+        body.textContent = text
+        node.appendChild(body)
+        if (isQueuedUserMessage(message)) {
+          appendQueuedMessageActions(node, message)
+        }
         return
       }
 
@@ -1029,7 +1204,331 @@ export const codexAppClientScript = `    const els = {
         list.appendChild(createAttachmentPreviewCard(withAttachmentPreviewUrl(attachment)))
       }
       node.appendChild(list)
+
+      if (isQueuedUserMessage(message)) {
+        appendQueuedMessageActions(node, message)
+      }
     }
+
+    function appendQueuedMessageActions(node, message) {
+      const actions = document.createElement("div")
+      actions.className = "queued-message-actions"
+
+      const guide = document.createElement("button")
+      guide.type = "button"
+      guide.className = "queued-action guide-action"
+      guide.textContent = "↪ 引导"
+      guide.disabled = isGuideUserMessage(message)
+      guide.title = isGuideUserMessage(message) ? "已设为引导" : "设为引导并提前处理"
+      guide.addEventListener("click", () => {
+        void markQueuedMessageAsGuide(message)
+      })
+      actions.appendChild(guide)
+
+      const remove = document.createElement("button")
+      remove.type = "button"
+      remove.className = "queued-icon-action"
+      remove.textContent = "⌫"
+      remove.title = "关闭排队"
+      remove.setAttribute("aria-label", "关闭排队")
+      remove.addEventListener("click", () => {
+        void closeQueuedMessage(message)
+      })
+      actions.appendChild(remove)
+
+      const moreWrap = document.createElement("div")
+      moreWrap.className = "queued-more"
+      const more = document.createElement("button")
+      more.type = "button"
+      more.className = "queued-icon-action"
+      more.textContent = "…"
+      more.title = "更多"
+      more.setAttribute("aria-label", "更多")
+      const menu = document.createElement("div")
+      menu.className = "queued-menu"
+      menu.hidden = true
+
+      const edit = document.createElement("button")
+      edit.type = "button"
+      edit.textContent = "✎ 编辑消息"
+      edit.addEventListener("click", () => {
+        menu.hidden = true
+        void editQueuedMessage(message)
+      })
+      menu.appendChild(edit)
+
+      const close = document.createElement("button")
+      close.type = "button"
+      close.textContent = "↵ 关闭排队"
+      close.addEventListener("click", () => {
+        menu.hidden = true
+        void closeQueuedMessage(message)
+      })
+      menu.appendChild(close)
+
+      more.addEventListener("click", (event) => {
+        event.stopPropagation()
+        menu.hidden = !menu.hidden
+      })
+      moreWrap.appendChild(more)
+      moreWrap.appendChild(menu)
+      actions.appendChild(moreWrap)
+
+      node.appendChild(actions)
+    }
+
+    function appendQueuedRunActions(node, run) {
+      const actions = document.createElement("div")
+      actions.className = "queued-message-actions"
+
+      const guide = document.createElement("button")
+      guide.type = "button"
+      guide.className = "queued-action guide-action"
+      guide.textContent = "↪ 引导"
+      guide.disabled = isGuideQueuedRun(run)
+      guide.title = isGuideQueuedRun(run) ? "已设为引导" : "设为引导并提前处理"
+      guide.addEventListener("click", () => {
+        void markQueuedRunAsGuide(run)
+      })
+      actions.appendChild(guide)
+
+      const remove = document.createElement("button")
+      remove.type = "button"
+      remove.className = "queued-icon-action"
+      remove.textContent = "⌫"
+      remove.title = "关闭排队"
+      remove.setAttribute("aria-label", "关闭排队")
+      remove.addEventListener("click", () => {
+        void closeQueuedRun(run)
+      })
+      actions.appendChild(remove)
+
+      const moreWrap = document.createElement("div")
+      moreWrap.className = "queued-more"
+      const more = document.createElement("button")
+      more.type = "button"
+      more.className = "queued-icon-action"
+      more.textContent = "…"
+      more.title = "更多"
+      more.setAttribute("aria-label", "更多")
+      const menu = document.createElement("div")
+      menu.className = "queued-menu"
+      menu.hidden = true
+
+      const edit = document.createElement("button")
+      edit.type = "button"
+      edit.textContent = "✎ 编辑消息"
+      edit.addEventListener("click", () => {
+        menu.hidden = true
+        void editQueuedRun(run)
+      })
+      menu.appendChild(edit)
+
+      const close = document.createElement("button")
+      close.type = "button"
+      close.textContent = "↵ 关闭排队"
+      close.addEventListener("click", () => {
+        menu.hidden = true
+        void closeQueuedRun(run)
+      })
+      menu.appendChild(close)
+
+      more.addEventListener("click", (event) => {
+        event.stopPropagation()
+        menu.hidden = !menu.hidden
+      })
+      moreWrap.appendChild(more)
+      moreWrap.appendChild(menu)
+      actions.appendChild(moreWrap)
+
+      node.appendChild(actions)
+    }
+
+    function isUserMessage(message) {
+      return messageKindTokens(message).includes("user")
+    }
+
+    function isQueuedUserMessage(message) {
+      return messageKindTokens(message).includes("queued")
+    }
+
+    function isGuideUserMessage(message) {
+      return messageKindTokens(message).includes("guide")
+    }
+
+    function messageKindTokens(message) {
+      return String((message && message.kind) || "")
+        .split(/\\s+/)
+        .filter(Boolean)
+    }
+
+    function userMessageLabel(message) {
+      const guide = isGuideUserMessage(message)
+      const queued = isQueuedUserMessage(message)
+      if (guide && queued) return "引导 · 排队"
+      if (guide) return "引导"
+      if (queued) return "排队"
+      return ""
+    }
+
+    function promoteQueuedUserMessage(sessionId, mode, runId) {
+      const targetSessionId = sessionId || state.activeSessionId
+      const runs = activeQueuedRuns(targetSessionId)
+      const queueMode = String(mode || "normal")
+      let index = runId
+        ? runs.findIndex((run) => queuedRunId(run) === runId)
+        : -1
+
+      if (index < 0) {
+        index = runs.findIndex(
+          (run) => queueMode !== "guide" || isGuideQueuedRun(run)
+        )
+      }
+
+      if (index < 0 && queueMode === "guide") {
+        index = runs.findIndex(Boolean)
+      }
+
+      if (index < 0) return
+
+      const run = runs.splice(index, 1)[0]
+      renderQueuedRunList()
+
+      const kind = queueMode === "guide" || isGuideQueuedRun(run) ? "user guide" : "user"
+      const messages = activeMessages(targetSessionId)
+      const message = {
+        kind,
+        runId: queuedRunId(run),
+        text: run.text,
+      }
+      messages.push(message)
+      renderMessagesForSession(targetSessionId)
+      schedulePersistMessages(targetSessionId)
+    }
+
+    function queuedMessageRunId(message) {
+      return String((message && message.runId) || "")
+    }
+
+    function queuedRunId(run) {
+      return String((run && run.runId) || "")
+    }
+
+    function isGuideQueuedRun(run) {
+      return String((run && run.mode) || "normal") === "guide"
+    }
+
+    function setMessageKindToken(message, token, enabled) {
+      const tokens = messageKindTokens(message).filter((item) => item !== token)
+      if (enabled) tokens.push(token)
+      message.kind = tokens.join(" ") || "user"
+    }
+
+    function createClientRunId() {
+      runIdCounter += 1
+      const randomPart = Math.random().toString(36).slice(2, 8)
+      return "run_" + Date.now().toString(36) + "_" + runIdCounter.toString(36) + "_" + randomPart
+    }
+
+    function findQueuedMessageByRunId(sessionId, runId) {
+      if (!sessionId || !runId) return null
+      return activeQueuedRuns(sessionId).find((run) => queuedRunId(run) === runId) || null
+    }
+
+    function removeQueuedMessageByRunId(sessionId, runId) {
+      if (!sessionId || !runId) return false
+      const runs = activeQueuedRuns(sessionId)
+      const index = runs.findIndex((run) => queuedRunId(run) === runId)
+      if (index < 0) return false
+      runs.splice(index, 1)
+      renderQueuedRunList()
+      return true
+    }
+
+    function reorderQueuedMessage(sessionId, message) {
+      const runs = activeQueuedRuns(sessionId)
+      const index = runs.indexOf(message)
+      if (index < 0) return
+
+      runs.splice(index, 1)
+      const insertIndex = isGuideQueuedRun(message)
+        ? runs.findIndex((run) => !isGuideQueuedRun(run))
+        : -1
+      if (insertIndex >= 0) {
+        runs.splice(insertIndex, 0, message)
+      } else {
+        runs.push(message)
+      }
+      renderQueuedRunList()
+    }
+
+    async function markQueuedMessageAsGuide(message) {
+      const sessionId = state.activeSessionId
+      const runId = queuedRunId(message) || queuedMessageRunId(message)
+      if (!sessionId || !runId || isGuideQueuedRun(message) || isGuideUserMessage(message)) return
+
+      try {
+        await postJson("/api/run/queue/update", {
+          mode: "guide",
+          runId,
+          sessionId,
+        })
+        if ("mode" in message) {
+          message.mode = "guide"
+        } else {
+          setMessageKindToken(message, "guide", true)
+          setMessageKindToken(message, "queued", true)
+        }
+        reorderQueuedMessage(sessionId, message)
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true, sessionId)
+      }
+    }
+
+    async function closeQueuedMessage(message) {
+      const sessionId = state.activeSessionId
+      const runId = queuedRunId(message) || queuedMessageRunId(message)
+      if (!sessionId || !runId) return
+
+      try {
+        await postJson("/api/run/queue/cancel", { runId, sessionId })
+        removeQueuedMessageByRunId(sessionId, runId)
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true, sessionId)
+      }
+    }
+
+    async function editQueuedMessage(message) {
+      const sessionId = state.activeSessionId
+      const runId = queuedRunId(message) || queuedMessageRunId(message)
+      if (!sessionId || !runId) return
+
+      const parsed = parseUserAttachmentMessage(message.text)
+      const currentText = parsed ? parsed.text : String(message.text || "")
+      const nextText = window.prompt("编辑消息", currentText)
+      if (nextText === null) return
+
+      const trimmed = nextText.trim()
+      if (!trimmed && !(parsed && parsed.attachments.length > 0)) return
+
+      try {
+        await postJson("/api/run/queue/update", {
+          prompt: trimmed || "请查看附件。",
+          runId,
+          sessionId,
+        })
+        message.text = parsed
+          ? formatUserMessageWithAttachments(trimmed || "请查看附件。", parsed.attachments)
+          : trimmed
+        renderQueuedRunList()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true, sessionId)
+      }
+    }
+
+    const markQueuedRunAsGuide = markQueuedMessageAsGuide
+    const closeQueuedRun = closeQueuedMessage
+    const editQueuedRun = editQueuedMessage
 
     function parseUserAttachmentMessage(text) {
       const value = String(text || "")
@@ -1951,11 +2450,32 @@ export const codexAppClientScript = `    const els = {
     }
 
     function appendMessage(kind, text, sessionId) {
+      appendMessageObject({ kind, text }, sessionId, false)
+    }
+
+    function appendRunMessage(kind, text, sessionId) {
+      appendMessageObject({ kind, text }, sessionId, true)
+    }
+
+    function appendMessageObject(message, sessionId, beforeQueuedTail) {
       const targetSessionId = sessionId || state.activeSessionId
       const messages = activeMessages(targetSessionId)
-      messages.push({ kind, text })
+      const insertIndex = beforeQueuedTail ? firstQueuedTailIndex(messages) : -1
+      if (insertIndex >= 0) {
+        messages.splice(insertIndex, 0, message)
+      } else {
+        messages.push(message)
+      }
       renderMessagesForSession(targetSessionId)
       schedulePersistMessages(targetSessionId)
+    }
+
+    function firstQueuedTailIndex(messages) {
+      let index = messages.length
+      while (index > 0 && isQueuedUserMessage(messages[index - 1])) {
+        index -= 1
+      }
+      return index < messages.length ? index : -1
     }
 
     function appendMeta(text, isError, sessionId) {
@@ -2059,7 +2579,12 @@ export const codexAppClientScript = `    const els = {
           text: "",
         }
         streamingThoughts.set(targetSessionId, thought)
-        messages.push(thought.message)
+        const insertIndex = firstQueuedTailIndex(messages)
+        if (insertIndex >= 0) {
+          messages.splice(insertIndex, 0, thought.message)
+        } else {
+          messages.push(thought.message)
+        }
       }
 
       thought.text = appendThinkingDelta(thought.text, delta)
@@ -2104,7 +2629,12 @@ export const codexAppClientScript = `    const els = {
 	      if (!streamingAssistant || messages.indexOf(streamingAssistant) === -1) {
 	        streamingAssistant = { kind: "assistant", text: "" }
         streamingAssistants.set(targetSessionId, streamingAssistant)
+        const insertIndex = firstQueuedTailIndex(messages)
+        if (insertIndex >= 0) {
+          messages.splice(insertIndex, 0, streamingAssistant)
+        } else {
 	        messages.push(streamingAssistant)
+        }
       }
       enqueueAssistantText(targetSessionId, streamingAssistant, text)
 	    }
@@ -2116,7 +2646,12 @@ export const codexAppClientScript = `    const els = {
 	      if (!streamingMultiRun || messages.indexOf(streamingMultiRun) === -1) {
 	        streamingMultiRun = { kind: "multi", text: "{}" }
         streamingMultiRuns.set(targetSessionId, streamingMultiRun)
+        const insertIndex = firstQueuedTailIndex(messages)
+        if (insertIndex >= 0) {
+          messages.splice(insertIndex, 0, streamingMultiRun)
+        } else {
 	        messages.push(streamingMultiRun)
+        }
 	      }
 	      streamingMultiRun.text = JSON.stringify(run || {})
       renderMessagesForSession(targetSessionId)
@@ -2129,7 +2664,13 @@ export const codexAppClientScript = `    const els = {
       discardRunTimer(targetSessionId)
 
       const message = { kind: "activity", text: "" }
-      activeMessages(targetSessionId).push(message)
+      const messages = activeMessages(targetSessionId)
+      const insertIndex = firstQueuedTailIndex(messages)
+      if (insertIndex >= 0) {
+        messages.splice(insertIndex, 0, message)
+      } else {
+        messages.push(message)
+      }
       const timer = {
         interval: 0,
         message,
@@ -2287,7 +2828,7 @@ export const codexAppClientScript = `    const els = {
       }
 
       const text = formatAgentEvent(event)
-      if (text) appendMessage(isActivityEvent(event) ? "activity" : "meta", text, sessionId)
+      if (text) appendRunMessage(isActivityEvent(event) ? "activity" : "meta", text, sessionId)
     }
 
     function isActivityEvent(event) {
@@ -2839,7 +3380,7 @@ export const codexAppClientScript = `    const els = {
       if (buffer.trim()) (onEvent || handleStreamEvent)(JSON.parse(buffer))
     }
 
-	    function handleStreamEvent(payload, sessionId) {
+	    function handleStreamEvent(payload, sessionId, requestRunId) {
 	      if (payload.type === "agent") {
 	        renderAgentEvent(payload.event, sessionId)
 	        return
@@ -2848,15 +3389,45 @@ export const codexAppClientScript = `    const els = {
 	        updateMultiAgentRun(payload.state, sessionId)
 	        return
 	      }
+      if (payload.type === "queued") {
+        setLocalSessionRunning(sessionId, true)
+        const run = findQueuedMessageByRunId(sessionId, payload.id)
+        if (run && payload.mode === "guide") {
+          run.mode = "guide"
+          reorderQueuedMessage(sessionId, run)
+        }
+        return
+      }
+      if (payload.type === "queue_updated") {
+        const run = findQueuedMessageByRunId(sessionId, payload.id)
+        if (run) {
+          run.mode = payload.mode === "guide" ? "guide" : "normal"
+          reorderQueuedMessage(sessionId, run)
+        }
+        return
+      }
+      if (payload.type === "queue_cancelled") {
+        removeQueuedMessageByRunId(sessionId, payload.id)
+        return
+      }
+      if (payload.type === "dequeued") {
+        promoteQueuedUserMessage(sessionId, payload.mode, payload.id)
+        return
+      }
       if (payload.type === "error") {
+        if (requestRunId) {
+          removeQueuedMessageByRunId(sessionId, requestRunId)
+        }
         flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
         finishThinking(sessionId)
-        setLocalSessionRunning(sessionId, false)
+        setLocalSessionActiveRun(sessionId, false)
+        syncSessionRunningFromLocalRefs(sessionId)
 	        appendMeta("[错误] " + payload.message, true, sessionId)
         return
       }
 	      if (payload.type === "started") {
+          setLocalSessionActiveRun(sessionId, true)
           setLocalSessionRunning(sessionId, true)
           startRunTimer(sessionId)
 	        return
@@ -2865,7 +3436,8 @@ export const codexAppClientScript = `    const els = {
         flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
         finishThinking(sessionId)
-        setLocalSessionRunning(sessionId, false)
+        setLocalSessionActiveRun(sessionId, false)
+        syncSessionRunningFromLocalRefs(sessionId)
         streamingAssistants.delete(sessionId)
         streamingMultiRuns.delete(sessionId)
       }
@@ -2936,6 +3508,7 @@ export const codexAppClientScript = `    const els = {
       try {
 	        const result = await deleteJson("/api/sessions", { sessionId })
 	        delete messagesBySession[sessionId]
+        delete queuedRunsBySession[sessionId]
 	        resetStreamingState(sessionId)
 	        messagesAutoFollow = true
 	        applyState(result)
@@ -2965,6 +3538,7 @@ export const codexAppClientScript = `    const els = {
 	        const result = await deleteJson("/api/projects", { projectId })
         for (const session of project.sessions || []) {
           delete messagesBySession[session.id]
+          delete queuedRunsBySession[session.id]
           resetStreamingState(session.id)
         }
 	        messagesAutoFollow = true
@@ -2986,6 +3560,7 @@ export const codexAppClientScript = `    const els = {
         clearPendingAttachments()
 	        messagesAutoFollow = true
 	        messagesBySession[result.activeSessionId] = []
+        queuedRunsBySession[result.activeSessionId] = []
         appendMeta("[新会话] " + result.message)
         await refreshModels().catch(() => {})
         await refreshChanges()
@@ -2997,7 +3572,7 @@ export const codexAppClientScript = `    const els = {
 
     async function cancelActiveSession() {
       const cancelSessionId = state.activeSessionId
-      if (!cancelSessionId || !isSessionRunning(cancelSessionId)) return
+      if (!cancelSessionId || !isSessionActivelyRunning(cancelSessionId)) return
 
       try {
         const result = await postJson("/api/cancel", { sessionId: cancelSessionId })
@@ -3022,6 +3597,10 @@ export const codexAppClientScript = `    const els = {
     })
 
     els.newSessionBtn.addEventListener("click", createNewSession)
+    els.cancelBtn.addEventListener("click", cancelActiveSession)
+    els.guideModeBtn.addEventListener("click", () => {
+      if (!els.guideModeBtn.disabled) setGuideMode(!guideMode)
+    })
     els.messages.addEventListener("scroll", updateMessagesAutoFollow, { passive: true })
     els.scrollBottomBtn.addEventListener("click", () => scrollMessagesToBottom("smooth"))
     els.changesFloat.addEventListener("click", () => {
@@ -3036,7 +3615,7 @@ export const codexAppClientScript = `    const els = {
       authBusy = true
       updateControls()
       setToast(els.authToast, "")
-      updateAuthGate("正在验证密钥并加载模型...")
+      updateAuthGate("正在验证 API Key，并加载可用模型...")
       try {
         const result = await postJson("/api/key", {
           apiKey,
@@ -3111,15 +3690,13 @@ export const codexAppClientScript = `    const els = {
 
     els.composer.addEventListener("submit", async (event) => {
       event.preventDefault()
-      if (isActiveSessionRunning()) {
-        await cancelActiveSession()
-        return
-      }
-
       const prompt = els.prompt.value.trim()
       const attachmentSnapshot = pendingAttachments.slice()
       if ((!prompt && attachmentSnapshot.length === 0) || !state.activeSessionId) return
 	      const runSessionId = state.activeSessionId
+      const activeAtSubmit = isActiveSessionRunning()
+      const runMode = "normal"
+      const runId = createClientRunId()
       let attachments = []
 
       try {
@@ -3130,29 +3707,49 @@ export const codexAppClientScript = `    const els = {
       }
 
 	      messagesAutoFollow = true
-      appendMessage(
-        "user",
-        formatUserMessageWithAttachments(prompt, attachments),
-        runSessionId
-      )
+      const formattedUserMessage = formatUserMessageWithAttachments(prompt, attachments)
+      if (activeAtSubmit) {
+        activeQueuedRuns(runSessionId).push({
+          mode: runMode,
+          runId,
+          text: formattedUserMessage,
+        })
+        renderQueuedRunList()
+      } else {
+        appendMessage(
+          runMode === "guide" ? "user guide" : "user",
+          formattedUserMessage,
+          runSessionId
+        )
+        const messages = activeMessages(runSessionId)
+        const appendedMessage = messages[messages.length - 1]
+        if (appendedMessage && isUserMessage(appendedMessage)) {
+          appendedMessage.runId = runId
+        }
+      }
 	      els.prompt.value = ""
       clearPendingAttachments()
 	      resizePrompt()
-	      resetStreamingState(runSessionId)
-      setLocalSessionRunning(runSessionId, true)
-      renderChanges({
-        available: true,
-        files: [],
-        message: "正在跟踪本次聊天的代码变更。",
-      })
+      if (!activeAtSubmit) {
+        resetStreamingState(runSessionId)
+        renderChanges({
+          available: true,
+          files: [],
+          message: "正在跟踪本次聊天的代码变更。",
+        })
+      }
+      if (runMode === "guide") setGuideMode(false)
+      addLocalSessionRunRef(runSessionId)
 
 	      try {
 	        await streamPost("/api/run", {
             attachments,
             sessionId: runSessionId,
 	          prompt: prompt || "请查看附件。",
+            mode: runMode,
+            runId,
 	          multiAgent: els.multiAgentMode.checked,
-	        }, (payload) => handleStreamEvent(payload, runSessionId))
+	        }, (payload) => handleStreamEvent(payload, runSessionId, runId))
       } catch (error) {
         flushAssistantQueue(runSessionId, true)
         finishThinking(runSessionId)
@@ -3163,8 +3760,11 @@ export const codexAppClientScript = `    const els = {
         finishThinking(runSessionId)
         streamingAssistants.delete(runSessionId)
         streamingMultiRuns.delete(runSessionId)
-        setLocalSessionRunning(runSessionId, false)
-        await refreshStatus()
+        try {
+          await refreshStatus()
+        } finally {
+          releaseLocalSessionRunRef(runSessionId)
+        }
         await refreshChanges()
       }
     })

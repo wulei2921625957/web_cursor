@@ -57,6 +57,12 @@ npm run dev -- --port 3031
 npm run dev -- --host 0.0.0.0 --port 3031
 ```
 
+### Process lifecycle
+
+When starting the web UI or any other long-running local process during a work
+session, stop that process before the session ends. Leaving old server processes
+running can keep ports occupied and make later page refreshes talk to stale code.
+
 Open a project from the UI when you are ready to work in it. Passing
 `--cwd /path/to/project` only changes the startup directory used by the project
 picker and the current-directory shortcut; opening or switching projects in the

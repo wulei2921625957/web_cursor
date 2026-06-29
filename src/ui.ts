@@ -119,12 +119,37 @@ type UiMessage = {
   text: string
 }
 
+type RunSubmissionMode = "normal" | "guide"
+
 type RunAttachmentInput = {
   dataBase64: string
   lastModified?: number
   name: string
   size: number
   type: string
+}
+
+type RunStreamSend = (event: unknown) => void
+
+type QueuedSessionRun = {
+  attachmentInputs: RunAttachmentInput[]
+  id: string
+  mode: RunSubmissionMode
+  multiAgent: boolean
+  project: UiProject
+  prompt: string
+  reject?: (error: unknown) => void
+  resolve?: () => void
+  send: RunStreamSend
+  session: UiAgentSession
+}
+
+type RunningSessionState = {
+  active: boolean
+  activeRunId?: string
+  multiRun?: MultiAgentRunner
+  projectId: string
+  queue: QueuedSessionRun[]
 }
 
 type SavedRunAttachment = {
@@ -221,10 +246,7 @@ async function main() {
   let selectedModel: ModelSelection = { id: options.model }
   let activeProjectId: string | null = null
   let activeSessionId: string | null = null
-  const runningSessions = new Map<
-    string,
-    { multiRun?: MultiAgentRunner; projectId: string }
-  >()
+  const runningSessions = new Map<string, RunningSessionState>()
   const projects = new Map<string, UiProject>()
   const projectIdsByPath = new Map<string, string>()
   const loadedProjectPaths = new Set<string>()
@@ -245,18 +267,44 @@ async function main() {
     return null
   }
 
-  const hasRunningSessions = () => runningSessions.size > 0
+  const hasRunningSessions = () =>
+    Array.from(runningSessions.values()).some(
+      (run) => run.active || run.queue.length > 0
+    )
 
   const isSessionRunning = (sessionId?: string | null) =>
-    Boolean(sessionId && runningSessions.has(sessionId))
+    Boolean(
+      sessionId &&
+        runningSessions.has(sessionId) &&
+        ((runningSessions.get(sessionId)?.active ?? false) ||
+          (runningSessions.get(sessionId)?.queue.length ?? 0) > 0)
+    )
+
+  const isSessionActivelyRunning = (sessionId?: string | null) =>
+    Boolean(sessionId && runningSessions.get(sessionId)?.active)
+
+  const sessionQueueLength = (sessionId?: string | null) =>
+    sessionId ? runningSessions.get(sessionId)?.queue.length ?? 0 : 0
 
   const isProjectRunning = (projectId: string) =>
-    Array.from(runningSessions.values()).some((run) => run.projectId === projectId)
+    Array.from(runningSessions.values()).some(
+      (run) => run.projectId === projectId && (run.active || run.queue.length > 0)
+    )
 
-  const runningSessionIds = () => Array.from(runningSessions.keys())
+  const runningSessionIds = () =>
+    Array.from(runningSessions.entries())
+      .filter(([, run]) => run.active || run.queue.length > 0)
+      .map(([sessionId]) => sessionId)
+
+  const activeRunSessionIds = () =>
+    Array.from(runningSessions.entries())
+      .filter(([, run]) => run.active)
+      .map(([sessionId]) => sessionId)
 
   const hasRunningSessionsOutsideProject = (projectId: string) =>
-    Array.from(runningSessions.values()).some((run) => run.projectId !== projectId)
+    Array.from(runningSessions.values()).some(
+      (run) => run.projectId !== projectId && (run.active || run.queue.length > 0)
+    )
 
   const disposeInactiveProjectAgents = async (projectId: string) => {
     await Promise.all(
@@ -321,6 +369,7 @@ async function main() {
   }
 
   const publicSession = (session: UiAgentSession) => ({
+    activeRun: isSessionActivelyRunning(session.id),
     contextUsage: session.agent.contextUsage(),
     id: session.id,
     createdAt: session.createdAt,
@@ -328,6 +377,7 @@ async function main() {
     model: session.agent.model,
     modelLabel: formatModelLabel(session.agent.model),
     projectId: session.projectId,
+    queueLength: sessionQueueLength(session.id),
     running: isSessionRunning(session.id),
     title: session.title,
     updatedAt: session.updatedAt,
@@ -351,6 +401,7 @@ async function main() {
       activeSession: activeSession ? publicSession(activeSession) : null,
       activeSessionId: activeSession?.id ?? null,
       activeSessionRunning: isSessionRunning(activeSession?.id),
+      activeRunSessionIds: activeRunSessionIds(),
       autoCompact: options.context.enabled,
       busy: hasRunningSessions(),
       canPersistApiKey: canPersistApiKey(),
@@ -618,6 +669,290 @@ async function main() {
 
   const areModelsReady = () =>
     Boolean(apiKey && modelsLoaded && modelChoices.length > 0)
+
+  const submitSessionRun = async (item: QueuedSessionRun) => {
+    let state = runningSessions.get(item.session.id)
+
+    if (!state) {
+      state = {
+        active: false,
+        projectId: item.project.id,
+        queue: [],
+      }
+      runningSessions.set(item.session.id, state)
+    }
+
+    state.projectId = item.project.id
+
+    if (state.active) {
+      await enqueueSessionRun(state, item)
+      return
+    }
+
+    state.active = true
+    state.activeRunId = item.id
+    await executeSessionRun(item, state)
+  }
+
+  const enqueueSessionRun = (
+    state: RunningSessionState,
+    item: QueuedSessionRun
+  ) =>
+    new Promise<void>((resolve, reject) => {
+      item.resolve = resolve
+      item.reject = reject
+
+      insertQueuedRun(state, item)
+
+      const position = state.queue.findIndex((queued) => queued.id === item.id) + 1
+      item.send({
+        type: "queued",
+        id: item.id,
+        mode: item.mode,
+        position,
+        queueLength: state.queue.length,
+      })
+    })
+
+  const insertQueuedRun = (state: RunningSessionState, item: QueuedSessionRun) => {
+    if (item.mode === "guide") {
+      const firstNormalIndex = state.queue.findIndex(
+        (queued) => queued.mode !== "guide"
+      )
+      if (firstNormalIndex === -1) {
+        state.queue.push(item)
+      } else {
+        state.queue.splice(firstNormalIndex, 0, item)
+      }
+      return
+    }
+
+    state.queue.push(item)
+  }
+
+  const findQueuedRun = (sessionId: string, runId: string) => {
+    const state = runningSessions.get(sessionId)
+    if (!state) {
+      return null
+    }
+
+    const index = state.queue.findIndex((item) => item.id === runId)
+    if (index < 0) {
+      return null
+    }
+
+    return {
+      index,
+      item: state.queue[index],
+      state,
+    }
+  }
+
+  const updateQueuedRun = ({
+    mode,
+    prompt,
+    runId,
+    sessionId,
+  }: {
+    mode?: RunSubmissionMode
+    prompt?: string
+    runId: string
+    sessionId: string
+  }) => {
+    const queued = findQueuedRun(sessionId, runId)
+
+    if (!queued) {
+      throw new Error("排队消息不存在或已经开始执行。")
+    }
+
+    if (typeof prompt === "string") {
+      const nextPrompt = prompt.trim()
+      if (!nextPrompt && queued.item.attachmentInputs.length === 0) {
+        throw new Error("排队消息内容不能为空。")
+      }
+      queued.item.prompt = nextPrompt || "请查看附件。"
+    }
+
+    if (mode) {
+      queued.item.mode = mode
+      queued.state.queue.splice(queued.index, 1)
+      insertQueuedRun(queued.state, queued.item)
+    }
+
+    const position =
+      queued.state.queue.findIndex((item) => item.id === queued.item.id) + 1
+    queued.item.send({
+      type: "queue_updated",
+      id: queued.item.id,
+      mode: queued.item.mode,
+      position,
+      queueLength: queued.state.queue.length,
+    })
+
+    return {
+      mode: queued.item.mode,
+      position,
+      queueLength: queued.state.queue.length,
+    }
+  }
+
+  const cancelQueuedRun = (sessionId: string, runId: string) => {
+    const queued = findQueuedRun(sessionId, runId)
+
+    if (!queued) {
+      throw new Error("排队消息不存在或已经开始执行。")
+    }
+
+    queued.state.queue.splice(queued.index, 1)
+    queued.item.send({
+      type: "queue_cancelled",
+      id: queued.item.id,
+      mode: queued.item.mode,
+      queueLength: queued.state.queue.length,
+    })
+    queued.item.resolve?.()
+
+    if (!queued.state.active && queued.state.queue.length === 0) {
+      runningSessions.delete(sessionId)
+    }
+
+    return {
+      queueLength: queued.state.queue.length,
+    }
+  }
+
+  const startNextQueuedRun = (sessionId: string, state: RunningSessionState) => {
+    const next = state.queue.shift()
+
+    if (!next) {
+      runningSessions.delete(sessionId)
+      return
+    }
+
+    state.active = true
+    state.activeRunId = next.id
+    state.projectId = next.project.id
+    next.send({
+      type: "dequeued",
+      id: next.id,
+      mode: next.mode,
+      queueLength: state.queue.length,
+    })
+
+    void executeSessionRun(next, state)
+      .then(() => next.resolve?.())
+      .catch((error) => next.reject?.(error))
+  }
+
+  const executeSessionRun = async (
+    item: QueuedSessionRun,
+    state: RunningSessionState
+  ) => {
+    const {
+      attachmentInputs,
+      mode,
+      multiAgent,
+      project: activeProject,
+      prompt,
+      send,
+      session: activeSession,
+    } = item
+
+    try {
+      try {
+        activeSession.changeBaselineTree = createWorkspaceTree(activeProject.cwd)
+        activeSession.changeResultTree = undefined
+        if (await rebindSessionWorkspace(activeProject, activeSession)) {
+          await persistState().catch(() => {})
+        }
+      } catch (error) {
+        send({ type: "error", message: getErrorMessage(error) })
+        return
+      }
+
+      try {
+        const activeCwd = setProcessWorkspaceCwd(activeProject.cwd)
+        assertWorkspaceReady(activeCwd)
+      } catch (error) {
+        send({ type: "error", message: getErrorMessage(error) })
+        return
+      }
+
+      activeSession.updatedAt = Date.now()
+      if (isDefaultSessionTitle(activeSession.title)) {
+        activeSession.title = titleFromPrompt(prompt || "附件")
+      }
+
+      let runPrompt = prompt
+      try {
+        const savedAttachments = await saveRunAttachments(
+          activeProject.cwd,
+          activeSession.id,
+          attachmentInputs
+        )
+        runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
+        if (savedAttachments.length > 0) {
+          send({
+            type: "agent",
+            event: {
+              type: "task",
+              status: "附件",
+              text: `已保存 ${savedAttachments.length} 个附件到 .coding-agent/uploads。`,
+            },
+          })
+        }
+      } catch (error) {
+        send({ type: "error", message: getErrorMessage(error) })
+        return
+      }
+
+      runPrompt = buildRunModePrompt(runPrompt, mode)
+      send({ type: "started", mode: multiAgent ? "multi" : "single", runMode: mode })
+
+      try {
+        if (multiAgent) {
+          const model = cloneModelSelection(activeSession.agent.model)
+          const runner = new MultiAgentRunner({
+            apiKey,
+            cwd: activeProject.cwd,
+            force: options.force,
+            model,
+            modelLabel: formatModelLabel(model),
+            prompt: runPrompt,
+            sandboxOptions: options.sandboxOptions,
+            onEvent: (event) => send({ type: "multi", state: event.state }),
+          })
+          state.multiRun = runner
+          const finalState = await runner.run()
+          activeSession.agent.addExternalSummary(summarizeMultiAgentRun(finalState))
+        } else {
+          await activeSession.agent.sendPrompt({
+            prompt: runPrompt,
+            onEvent: (event) => send({ type: "agent", event }),
+          })
+        }
+        activeSession.updatedAt = Date.now()
+        try {
+          recordSessionChangeResult(activeProject.cwd, activeSession)
+        } catch {}
+        send({ type: "finished" })
+      } catch (error) {
+        send({ type: "error", message: getFriendlyRuntimeErrorMessage(error) })
+      }
+    } finally {
+      try {
+        recordSessionChangeResult(activeProject.cwd, activeSession)
+      } catch {}
+      state.active = false
+      state.activeRunId = undefined
+      state.multiRun = undefined
+      await persistState().catch(() => {})
+
+      if (runningSessions.get(activeSession.id) === state) {
+        startNextQueuedRun(activeSession.id, state)
+      }
+    }
+  }
 
   const loadModelChoices = async (nextApiKey: string) => {
     const probe = new CodingAgentSession({
@@ -1104,7 +1439,7 @@ async function main() {
         const running = sessionId ? runningSessions.get(sessionId) : null
         const target = getRequestedSession(sessionId)
 
-        if (!target || !running) {
+        if (!target || !running?.active) {
           sendJson(response, { error: "当前会话没有可取消的任务。" }, 400)
           return
         }
@@ -1126,6 +1461,67 @@ async function main() {
         return
       }
 
+      if (request.method === "POST" && url.pathname === "/api/run/queue/update") {
+        const body = await readJsonBody(request)
+        const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
+        const runId = runIdField(body, "runId")
+        const target = getRequestedSession(sessionId)
+
+        if (!target) {
+          sendJson(response, { error: "会话不存在。" }, 404)
+          return
+        }
+
+        if (!runId) {
+          sendJson(response, { error: "runId 不能为空。" }, 400)
+          return
+        }
+
+        const prompt =
+          typeof body.prompt === "string" ? stringField(body, "prompt") : undefined
+        const mode = stringField(body, "mode").trim()
+          ? runSubmissionModeField(body, "mode")
+          : undefined
+
+        const result = updateQueuedRun({
+          mode,
+          prompt,
+          runId,
+          sessionId: target.session.id,
+        })
+        sendJson(response, {
+          ...buildState("排队消息已更新。"),
+          ...result,
+          updated: true,
+        })
+        return
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/run/queue/cancel") {
+        const body = await readJsonBody(request)
+        const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
+        const runId = runIdField(body, "runId")
+        const target = getRequestedSession(sessionId)
+
+        if (!target) {
+          sendJson(response, { error: "会话不存在。" }, 404)
+          return
+        }
+
+        if (!runId) {
+          sendJson(response, { error: "runId 不能为空。" }, 400)
+          return
+        }
+
+        const result = cancelQueuedRun(target.session.id, runId)
+        sendJson(response, {
+          ...buildState("已关闭排队。"),
+          ...result,
+          cancelled: true,
+        })
+        return
+      }
+
       if (request.method === "POST" && url.pathname === "/api/run") {
         const body = await readJsonBody(request)
         const prompt = stringField(body, "prompt").trim()
@@ -1137,6 +1533,8 @@ async function main() {
           return
         }
         const multiAgent = booleanField(body, "multiAgent")
+        const mode = runSubmissionModeField(body, "mode")
+        const runId = runIdField(body, "runId") || createEntityId("run")
         const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
 
         streamEvents(response, async (send) => {
@@ -1156,11 +1554,6 @@ async function main() {
             return
           }
 
-          if (isSessionRunning(activeSession.id)) {
-            send({ type: "error", message: "当前会话已有任务在执行。" })
-            return
-          }
-
           if (hasRunningSessionsOutsideProject(activeProject.id)) {
             send({ type: "error", message: "其他项目还有任务在执行，结束后再提交任务。" })
             return
@@ -1176,97 +1569,16 @@ async function main() {
             return
           }
 
-          runningSessions.set(activeSession.id, { projectId: activeProject.id })
-
-          try {
-            activeSession.changeBaselineTree = createWorkspaceTree(activeProject.cwd)
-            activeSession.changeResultTree = undefined
-            if (await rebindSessionWorkspace(activeProject, activeSession)) {
-              await persistState().catch(() => {})
-            }
-          } catch (error) {
-            send({ type: "error", message: getErrorMessage(error) })
-            runningSessions.delete(activeSession.id)
-            return
-          }
-
-          try {
-            const activeCwd = setProcessWorkspaceCwd(activeProject.cwd)
-            assertWorkspaceReady(activeCwd)
-          } catch (error) {
-            send({ type: "error", message: getErrorMessage(error) })
-            runningSessions.delete(activeSession.id)
-            return
-          }
-
-          activeSession.updatedAt = Date.now()
-          if (isDefaultSessionTitle(activeSession.title)) {
-            activeSession.title = titleFromPrompt(prompt || "附件")
-          }
-
-          let runPrompt = prompt
-          try {
-            const savedAttachments = await saveRunAttachments(
-              activeProject.cwd,
-              activeSession.id,
-              attachmentInputs
-            )
-            runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
-            if (savedAttachments.length > 0) {
-              send({
-                type: "agent",
-                event: {
-                  type: "task",
-                  status: "附件",
-                  text: `已保存 ${savedAttachments.length} 个附件到 .coding-agent/uploads。`,
-                },
-              })
-            }
-          } catch (error) {
-            send({ type: "error", message: getErrorMessage(error) })
-            runningSessions.delete(activeSession.id)
-            return
-          }
-
-          send({ type: "started", mode: multiAgent ? "multi" : "single" })
-
-          try {
-            if (multiAgent) {
-              const model = cloneModelSelection(activeSession.agent.model)
-              const runner = new MultiAgentRunner({
-                apiKey,
-                cwd: activeProject.cwd,
-                force: options.force,
-                model,
-                modelLabel: formatModelLabel(model),
-                prompt: runPrompt,
-                sandboxOptions: options.sandboxOptions,
-                onEvent: (event) => send({ type: "multi", state: event.state }),
-              })
-              runningSessions.set(activeSession.id, {
-                projectId: activeProject.id,
-                multiRun: runner,
-              })
-              const finalState = await runner.run()
-              activeSession.agent.addExternalSummary(
-                summarizeMultiAgentRun(finalState)
-              )
-            } else {
-              await activeSession.agent.sendPrompt({
-                prompt: runPrompt,
-                onEvent: (event) => send({ type: "agent", event }),
-              })
-            }
-            activeSession.updatedAt = Date.now()
-            recordSessionChangeResult(activeProject.cwd, activeSession)
-            send({ type: "finished" })
-          } catch (error) {
-            send({ type: "error", message: getFriendlyRuntimeErrorMessage(error) })
-          } finally {
-            recordSessionChangeResult(activeProject.cwd, activeSession)
-            runningSessions.delete(activeSession.id)
-            await persistState().catch(() => {})
-          }
+          await submitSessionRun({
+            attachmentInputs,
+            id: runId,
+            mode,
+            multiAgent,
+            project: activeProject,
+            prompt,
+            send,
+            session: activeSession,
+          })
         })
         return
       }
@@ -1774,6 +2086,18 @@ function booleanField(
   return typeof value === "boolean" ? value : defaultValue
 }
 
+function runSubmissionModeField(
+  body: Record<string, unknown>,
+  name: string
+): RunSubmissionMode {
+  return stringField(body, name).trim() === "guide" ? "guide" : "normal"
+}
+
+function runIdField(body: Record<string, unknown>, name: string) {
+  const value = stringField(body, name).trim()
+  return /^[A-Za-z0-9_-]{1,100}$/.test(value) ? value : ""
+}
+
 function modelSelectionField(
   body: Record<string, unknown>,
   name: string
@@ -2017,6 +2341,21 @@ function buildPromptWithAttachments(
   }
 
   return parts.join("\n")
+}
+
+function buildRunModePrompt(prompt: string, mode: RunSubmissionMode) {
+  if (mode !== "guide") {
+    return prompt
+  }
+
+  return [
+    "User guidance/correction received while an earlier run was in progress.",
+    "Treat this message as higher priority than the previous assistant direction.",
+    "First correct the mistaken assumption, plan, or implementation path called out by the user, then continue from the current workspace state.",
+    "",
+    "Guidance:",
+    prompt.trim() || "The user is correcting the previous direction. Ask for clarification only if the correction is ambiguous.",
+  ].join("\n")
 }
 
 function extractAttachmentTextPreview(name: string, mimeType: string, buffer: Buffer) {
@@ -3512,11 +3851,27 @@ function isSdkTransportError(error: unknown) {
     text.includes("nghttp2_frame_size_error") ||
     text.includes("err_http2_stream_error") ||
     text.includes("stream closed with error code") ||
-    text.includes("connecterror") && text.includes("network error")
+    text.includes("connecterror") && text.includes("network error") ||
+    isSdkCancellationErrorText(text)
+  )
+}
+
+function isSdkCancellationErrorText(text: string) {
+  return (
+    text.includes("connecterror") &&
+    text.includes("canceled") &&
+    text.includes("operation was aborted")
+  ) || (
+    text.includes("aborterror") &&
+    text.includes("operation was aborted")
   )
 }
 
 function getFriendlyRuntimeErrorMessage(error: unknown) {
+  if (isSdkCancellationErrorText(getErrorText(error).toLowerCase())) {
+    return "任务已取消。"
+  }
+
   if (isSdkTransportError(error)) {
     return "Cursor SDK 网络连接中断，请重试。若持续出现，请检查网络、代理或稍后再试。"
   }
