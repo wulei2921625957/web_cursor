@@ -19,7 +19,6 @@ export const codexAppClientScript = `    const els = {
       changesList: document.getElementById("changesList"),
       changesSummary: document.getElementById("changesSummary"),
       changeTree: document.getElementById("changeTree"),
-      cancelBtn: document.getElementById("cancelBtn"),
       composer: document.getElementById("composer"),
       conversation: document.getElementById("conversation"),
       contextMeter: document.getElementById("contextMeter"),
@@ -406,6 +405,8 @@ export const codexAppClientScript = `    const els = {
       const busy = Boolean(state.busy)
       const activeBusy = isActiveSessionRunning()
       const activeRunning = isActiveSessionActivelyRunning()
+      const hasDraft = Boolean(els.prompt.value.trim() || pendingAttachments.length > 0)
+      const sendCancelsRun = activeRunning && !hasDraft
       const modelsLoaded = Boolean(state.modelsLoaded)
       const canPersistApiKey = Boolean(state.canPersistApiKey)
       if (!activeRunning && guideMode) {
@@ -433,19 +434,18 @@ export const codexAppClientScript = `    const els = {
       els.guideModeBtn.classList.toggle("active", guideMode)
       els.guideModeBtn.setAttribute("aria-pressed", guideMode ? "true" : "false")
       els.guideModeBtn.title = guideMode ? "引导纠正已开启" : "引导纠正"
-      els.cancelBtn.hidden = !activeRunning
-      els.cancelBtn.disabled = !activeRunning
       els.sendBtn.classList.toggle("running", activeBusy)
-      els.sendBtn.textContent = "↑"
+      els.sendBtn.classList.toggle("cancel-mode", sendCancelsRun)
+      els.sendBtn.textContent = sendCancelsRun ? "" : "↑"
       els.sendBtn.setAttribute(
         "aria-label",
-        activeBusy ? (guideMode ? "发送引导" : "加入队列") : "发送"
+        sendCancelsRun ? "取消任务" : activeBusy ? "加入队列" : "发送"
       )
-      els.sendBtn.title = activeBusy ? (guideMode ? "发送引导" : "加入队列") : "发送"
+      els.sendBtn.title = sendCancelsRun ? "取消任务" : activeBusy ? "加入队列" : "发送"
       els.sendBtn.disabled =
         !hasSession ||
         !modelsLoaded ||
-        (!els.prompt.value.trim() && pendingAttachments.length === 0)
+        (!hasDraft && !activeRunning)
       els.openProjectBtn.disabled = busy
       els.authSubmitBtn.disabled = authBusy || busy || !els.authApiKey.value.trim()
       updateContextMeter()
@@ -3597,7 +3597,6 @@ export const codexAppClientScript = `    const els = {
     })
 
     els.newSessionBtn.addEventListener("click", createNewSession)
-    els.cancelBtn.addEventListener("click", cancelActiveSession)
     els.guideModeBtn.addEventListener("click", () => {
       if (!els.guideModeBtn.disabled) setGuideMode(!guideMode)
     })
@@ -3692,7 +3691,13 @@ export const codexAppClientScript = `    const els = {
       event.preventDefault()
       const prompt = els.prompt.value.trim()
       const attachmentSnapshot = pendingAttachments.slice()
-      if ((!prompt && attachmentSnapshot.length === 0) || !state.activeSessionId) return
+      if (!state.activeSessionId) return
+      if (!prompt && attachmentSnapshot.length === 0) {
+        if (isActiveSessionActivelyRunning()) {
+          await cancelActiveSession()
+        }
+        return
+      }
 	      const runSessionId = state.activeSessionId
       const activeAtSubmit = isActiveSessionRunning()
       const runMode = "normal"

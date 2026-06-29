@@ -1681,8 +1681,7 @@ export const codexAppStyles = `    :root {
       appearance: auto;
     }
 
-    .guide-toggle,
-    .cancel-run {
+    .guide-toggle {
       display: grid;
       height: 34px;
       min-height: 34px;
@@ -1700,12 +1699,6 @@ export const codexAppStyles = `    :root {
     .guide-toggle.active {
       background: #0f766e;
       color: #ffffff;
-    }
-
-    .cancel-run {
-      width: 34px;
-      padding: 0;
-      font-size: 13px;
     }
 
     .send {
@@ -1727,6 +1720,14 @@ export const codexAppStyles = `    :root {
 
     .send.running:hover:not(:disabled) {
       background: color-mix(in srgb, var(--text) 92%, var(--panel));
+    }
+
+    .send.cancel-mode::before {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: currentColor;
+      content: "";
     }
 
     .side-panel {

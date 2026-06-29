@@ -93,7 +93,6 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 	                    <option value="">加载模型</option>
 	                  </select>
 	                </div>
-	                <button class="cancel-run" id="cancelBtn" type="button" aria-label="取消当前任务" title="取消当前任务" hidden>■</button>
 	                <button class="send primary" id="sendBtn" type="submit" aria-label="发送">↑</button>
 	              </div>
             </div>
