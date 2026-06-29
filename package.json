@@ -18,7 +18,8 @@
   },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "dev": "tsx src/ui.ts",
+    "dev": "tsx watch src/ui.ts --dev-reload",
+    "dev:once": "tsx src/ui.ts",
     "dev:ui": "npm run dev --",
     "build": "npm run clean && tsc -p tsconfig.json",
     "prepack": "npm run build",

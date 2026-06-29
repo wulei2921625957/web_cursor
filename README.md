@@ -18,9 +18,28 @@ Start the local web UI:
 npm run dev
 ```
 
+In development, `npm run dev` watches the TypeScript source. After a code change,
+the server restarts automatically and the already-open browser tab reloads when
+the server is ready again. Use `npm run dev:once` for a single non-watching dev
+run.
+
 If no usable API key is already configured, the web UI shows a login-style
 screen first. Enter your Cursor API key there; the app verifies it and loads the
-available model list before showing the workspace UI.
+available model list before showing the workspace UI. If you choose to save it,
+the key is stored in the app project's `coding-agent.config.json` file and loaded
+automatically on the next start. Copy `coding-agent.config.example.json` to
+`coding-agent.config.json` when you want to edit the config directly:
+
+```json
+{
+  "apiKey": "crsr_...",
+  "port": 3030
+}
+```
+
+The saved config key is tried before `CURSOR_API_KEY`; if the saved key is
+invalid, the UI returns to the key input screen. `--port` overrides the config
+port for one run.
 
 Build and run the compiled UI:
 

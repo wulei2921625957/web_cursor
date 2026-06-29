@@ -9,7 +9,7 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
       </label>
       <label class="check" id="authSaveKeyRow">
         <input id="authSaveKey" type="checkbox">
-        <span>保存到 Windows 用户环境变量</span>
+        <span>保存到项目，下次自动加载</span>
       </label>
       <button id="authSubmitBtn" class="primary" type="submit">进入</button>
       <div class="toast" id="authToast"></div>

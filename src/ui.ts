@@ -62,6 +62,7 @@ function openDatabase(filename: string): Database {
 type UiOptions = {
   context: ContextCompactionOptions
   cwd: string
+  devReload: boolean
   force: boolean
   help: boolean
   host: string
@@ -179,14 +180,27 @@ type PersistedSession = {
 }
 
 const DEFAULT_MODEL = process.env.CURSOR_MODEL ?? "composer-2"
-const DEFAULT_UI_PORT = readPort(process.env.CURSOR_UI_PORT ?? "3030", "CURSOR_UI_PORT")
+const DEFAULT_UI_PORT = 3030
 const MAX_RUN_ATTACHMENTS = 8
 const MAX_RUN_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_RUN_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
 const MAX_ATTACHMENT_TEXT_PREVIEW_BYTES = 24 * 1024
+const LEGACY_PROJECT_CONFIG_FILE_NAME = "config.json"
+const PROJECT_CONFIG_FILE_NAME = "coding-agent.config.json"
+
+type UserConfig = {
+  apiKey?: string
+  port?: number
+  version?: number
+}
+
+type ApiKeySource = "config" | "env" | "manual" | ""
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  const helpRequested = argv.some((arg) => arg === "--help" || arg === "-h")
+  const projectConfig = helpRequested ? {} : await readProjectConfig()
+  const options = parseArgs(argv, projectConfig)
 
   if (options.help) {
     printHelp()
@@ -195,7 +209,13 @@ async function main() {
 
   installSdkTransportErrorGuard()
 
-  let apiKey = process.env.CURSOR_API_KEY ?? ""
+  const envApiKey = (process.env.CURSOR_API_KEY ?? "").trim()
+  const configApiKey = projectConfig.apiKey?.trim() ?? ""
+  let apiKey = configApiKey || envApiKey
+  let apiKeySource: ApiKeySource = configApiKey ? "config" : envApiKey ? "env" : ""
+  if (apiKey) {
+    process.env.CURSOR_API_KEY = apiKey
+  }
   let modelChoices: ModelChoice[] = []
   let modelsLoaded = false
   let selectedModel: ModelSelection = { id: options.model }
@@ -333,14 +353,15 @@ async function main() {
       activeSessionRunning: isSessionRunning(activeSession?.id),
       autoCompact: options.context.enabled,
       busy: hasRunningSessions(),
+      canPersistApiKey: canPersistApiKey(),
       cwd: activeProject?.cwd ?? "",
+      devReload: options.devReload,
       hasApiKey: Boolean(apiKey),
       launchCwd: options.cwd,
       message,
       model: formatModelLabel(model),
       modelsLoaded: areModelsReady(),
       platform: process.platform,
-      canPersistApiKey: process.platform === "win32",
       projects: Array.from(projects.values()).map(publicProject),
       runningSessionIds: runningSessionIds(),
       selectedModel: model,
@@ -648,6 +669,29 @@ async function main() {
     }
   }
 
+  const readCurrentConfigApiKey = async () =>
+    (await readProjectConfig().catch((): UserConfig => ({}))).apiKey?.trim() ?? ""
+
+  const refreshApiKeyFromProjectConfig = async () => {
+    const nextApiKey = await readCurrentConfigApiKey()
+    if (!nextApiKey || nextApiKey === apiKey) {
+      return false
+    }
+
+    apiKey = nextApiKey
+    apiKeySource = "config"
+    process.env.CURSOR_API_KEY = nextApiKey
+    return true
+  }
+
+  const applyApiKeyToIdleSessions = async (nextApiKey: string) => {
+    for (const item of allSessions()) {
+      if (!isSessionRunning(item.id)) {
+        await item.agent.setApiKey(nextApiKey)
+      }
+    }
+  }
+
   await restoreRegisteredProjects().catch(() => {})
   if (projects.size > 0) {
     await persistState().catch(() => {})
@@ -664,6 +708,16 @@ async function main() {
 
       if (request.method === "GET" && url.pathname === "/api/status") {
         sendJson(response, buildState())
+        return
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/dev/events") {
+        if (!options.devReload) {
+          sendJson(response, { error: "Developer reload is disabled." }, 404)
+          return
+        }
+
+        streamDevReloadEvents(response)
         return
       }
 
@@ -705,6 +759,8 @@ async function main() {
       }
 
       if (request.method === "GET" && url.pathname === "/api/models") {
+        const configApiKeyChanged = await refreshApiKeyFromProjectConfig()
+
         if (!apiKey) {
           sendJson(response, {
             available: false,
@@ -716,8 +772,42 @@ async function main() {
           return
         }
 
-        const choices = await loadModelChoices(apiKey)
+        const attemptedApiKey = apiKey
+        const attemptedApiKeySource = apiKeySource
+        let choices: ModelChoice[]
+        try {
+          choices = await loadModelChoices(attemptedApiKey)
+        } catch (error) {
+          if (attemptedApiKeySource === "config" || attemptedApiKeySource === "env") {
+            apiKey = ""
+            apiKeySource = ""
+            modelChoices = []
+            modelsLoaded = false
+            if (process.env.CURSOR_API_KEY === attemptedApiKey) {
+              delete process.env.CURSOR_API_KEY
+            }
+
+            const sourceLabel =
+              attemptedApiKeySource === "config"
+                ? "项目配置中保存的密钥"
+                : "环境变量 CURSOR_API_KEY"
+            sendJson(response, {
+              available: false,
+              choices: [],
+              current: selectedModel,
+              currentLabel: formatModelLabel(selectedModel),
+              hasApiKey: false,
+              message: `${sourceLabel}验证失败，请重新输入密钥。`,
+            })
+            return
+          }
+
+          throw error
+        }
         applyLoadedModelChoices(choices)
+        if (configApiKeyChanged) {
+          await applyApiKeyToIdleSessions(apiKey)
+        }
         await persistState().catch(() => {})
         sendJson(
           response,
@@ -903,20 +993,20 @@ async function main() {
 
         const choices = await loadModelChoices(nextApiKey)
         apiKey = nextApiKey
+        apiKeySource = "manual"
         process.env.CURSOR_API_KEY = nextApiKey
         applyLoadedModelChoices(choices)
 
-        for (const item of allSessions()) {
-          await item.agent.setApiKey(nextApiKey)
-        }
+        await applyApiKeyToIdleSessions(nextApiKey)
 
         let saveMessage = "仅当前服务生效。"
         if (save) {
           try {
-            persistApiKey(nextApiKey)
-            saveMessage = "并保存到 Windows 用户环境变量。"
+            await persistApiKey(nextApiKey, options.port)
+            apiKeySource = "config"
+            saveMessage = "并保存到项目配置。"
           } catch (error) {
-            saveMessage = `当前服务已生效，但未保存到环境变量：${getErrorMessage(error)}`
+            saveMessage = `当前服务已生效，但未保存到项目配置：${getErrorMessage(error)}`
           }
         }
 
@@ -1237,15 +1327,18 @@ async function main() {
   process.once("SIGTERM", () => void shutdown())
 }
 
-function parseArgs(argv: string[]): UiOptions {
+function parseArgs(argv: string[], projectConfig: UserConfig = {}): UiOptions {
   let context = readContextOptionsFromEnv()
   let cwd = process.cwd()
+  let devReload = readBooleanEnv("CURSOR_UI_DEV_RELOAD", false)
   let force = readBooleanEnv("CURSOR_FORCE", true)
   let help = false
   let host = "127.0.0.1"
   let model = DEFAULT_MODEL
   let open = false
-  let port = DEFAULT_UI_PORT
+  let port =
+    projectConfig.port ??
+    readPort(process.env.CURSOR_UI_PORT ?? String(DEFAULT_UI_PORT), "CURSOR_UI_PORT")
   let sandboxOptions = readSandboxOptionsFromEnv()
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -1289,6 +1382,16 @@ function parseArgs(argv: string[]): UiOptions {
 
     if (arg === "--no-open") {
       open = false
+      continue
+    }
+
+    if (arg === "--dev-reload") {
+      devReload = true
+      continue
+    }
+
+    if (arg === "--no-dev-reload") {
+      devReload = false
       continue
     }
 
@@ -1407,6 +1510,7 @@ function parseArgs(argv: string[]): UiOptions {
   return {
     context,
     cwd: path.resolve(cwd),
+    devReload,
     force,
     help,
     host,
@@ -1556,6 +1660,31 @@ function sendJson(response: ServerResponse, payload: unknown, status = 200) {
     "X-Content-Type-Options": "nosniff",
   })
   response.end(JSON.stringify(payload))
+}
+
+function streamDevReloadEvents(response: ServerResponse) {
+  response.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Connection": "keep-alive",
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "X-Accel-Buffering": "no",
+    "X-Content-Type-Options": "nosniff",
+  })
+  response.flushHeaders?.()
+  response.write(`event: ready\ndata: ${JSON.stringify({ startedAt: Date.now() })}\n\n`)
+
+  const heartbeat = setInterval(() => {
+    if (response.destroyed || response.writableEnded) {
+      clearInterval(heartbeat)
+      return
+    }
+
+    response.write(": heartbeat\n\n")
+  }, 15000)
+
+  response.once("close", () => {
+    clearInterval(heartbeat)
+  })
 }
 
 async function sendAttachmentPreview(
@@ -1993,13 +2122,94 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
-function persistApiKey(apiKey: string) {
-  if (process.platform === "win32") {
-    execFileSync("setx", ["CURSOR_API_KEY", apiKey], { stdio: "ignore" })
-    return
+function canPersistApiKey() {
+  return Boolean(getProjectConfigFile())
+}
+
+async function persistApiKey(apiKey: string, port: number) {
+  const configFile = getProjectConfigFile()
+  if (!configFile) {
+    throw new Error("无法确定项目配置路径。")
   }
 
-  throw new Error("保存密钥目前只支持 Windows。")
+  const existing = await readProjectConfig().catch((): UserConfig => ({}))
+  const next: UserConfig = {
+    ...existing,
+    apiKey,
+    port: existing.port ?? port,
+    version: 1,
+  }
+  const dir = path.dirname(configFile)
+  await fs.mkdir(dir, { mode: 0o700, recursive: true })
+  await fs.chmod(dir, 0o700).catch(() => {})
+  await fs.writeFile(configFile, `${JSON.stringify(next, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  })
+  await fs.chmod(configFile, 0o600).catch(() => {})
+}
+
+async function readProjectConfig(): Promise<UserConfig> {
+  const config = await readProjectConfigFile(getProjectConfigFile())
+  if (config) {
+    return config
+  }
+
+  return (await readProjectConfigFile(getLegacyProjectConfigFile())) ?? {}
+}
+
+async function readProjectConfigFile(configFile: string): Promise<UserConfig | null> {
+  if (!configFile) {
+    return {}
+  }
+
+  const text = await fs.readFile(configFile, "utf8").catch((error) => {
+    if ((error as { code?: unknown }).code === "ENOENT") {
+      return null
+    }
+
+    throw error
+  })
+  if (!text || !text.trim()) {
+    return null
+  }
+
+  const parsed = JSON.parse(text) as unknown
+  if (!parsed || typeof parsed !== "object") {
+    return null
+  }
+
+  const record = parsed as Record<string, unknown>
+  return {
+    apiKey: typeof record.apiKey === "string" ? record.apiKey : undefined,
+    port: normalizeConfigPort(record.port, configFile),
+    version: typeof record.version === "number" ? record.version : undefined,
+  }
+}
+
+function normalizeConfigPort(value: unknown, configFile: string) {
+  if (value === undefined || value === null || value === "") {
+    return undefined
+  }
+
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN
+
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw new Error(
+      `${path.relative(getAppRoot(), configFile)} 中的 port 必须是 0 到 65535 的整数。`
+    )
+  }
+
+  return parsed
+}
+
+function getProjectConfigFile() {
+  return path.join(getAppRoot(), PROJECT_CONFIG_FILE_NAME)
+}
+
+function getLegacyProjectConfigFile() {
+  return path.join(getAppRoot(), ".session", LEGACY_PROJECT_CONFIG_FILE_NAME)
 }
 
 type ProjectStoragePaths = {
@@ -3541,13 +3751,18 @@ function printHelp() {
 Usage:
   code-agent-ui [options]
 
+Config:
+  coding-agent.config.json may define apiKey and port. --port overrides config.
+
 Options:
   -C, --cwd <path>       Startup directory for project picker shortcuts. Defaults to cwd.
   -m, --model <id>      Model id. Defaults to CURSOR_MODEL or composer-2.
       --host <host>     Host to bind. Defaults to 127.0.0.1.
-      --port <port>     Port to bind. Defaults to CURSOR_UI_PORT or 3030.
+      --port <port>     Port to bind. Defaults to config port, CURSOR_UI_PORT, or 3030.
       --open            Open the browser automatically after startup.
       --no-open         Keep the browser closed after startup. Default.
+      --dev-reload      Enable browser auto-reload after dev server restarts.
+      --no-dev-reload   Disable browser auto-reload.
       --force           Expire a stuck active local run before starting. Default.
       --no-force        Do not expire a stuck active local run automatically.
       --no-sandbox      Disable Cursor's local shell sandbox for tool calls. Default.

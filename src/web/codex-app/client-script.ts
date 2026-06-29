@@ -57,6 +57,7 @@ export const codexAppClientScript = `    const els = {
       activeSessionRunning: false,
       busy: false,
       canPersistApiKey: false,
+      devReload: false,
       hasApiKey: false,
       launchCwd: "",
       model: "-",
@@ -97,6 +98,8 @@ export const codexAppClientScript = `    const els = {
     let reviewPanelHidden = false
     let reviewPanelWidth = 0
     let reviewResizeState = null
+    let devReloadReady = false
+    let devReloadSource = null
 
     function setToast(element, text, isError) {
       element.textContent = text || ""
@@ -2327,6 +2330,24 @@ export const codexAppClientScript = `    const els = {
       const response = await fetch("/api/status")
       const result = await response.json()
       applyState(result)
+      startDevReload()
+    }
+
+    function startDevReload() {
+      if (!state.devReload || devReloadSource || typeof EventSource === "undefined") {
+        return
+      }
+
+      devReloadSource = new EventSource("/api/dev/events")
+      devReloadSource.addEventListener("ready", () => {
+        if (devReloadReady) {
+          window.location.reload()
+          return
+        }
+
+        devReloadReady = true
+      })
+      devReloadSource.onerror = () => {}
     }
 
     async function refreshModels() {
@@ -2335,7 +2356,10 @@ export const codexAppClientScript = `    const els = {
       if (!response.ok) throw new Error(result.error || "加载模型失败")
       console.log("[coding-agent] /api/models", result)
       state = Object.assign({}, state, {
-        hasApiKey: state.hasApiKey || Boolean(result.available),
+        hasApiKey:
+          typeof result.hasApiKey === "boolean"
+            ? result.hasApiKey
+            : state.hasApiKey || Boolean(result.available),
         model: result.currentLabel || state.model,
         modelsLoaded: Boolean(result.available),
         selectedModel: result.current || state.selectedModel,
@@ -3171,7 +3195,12 @@ export const codexAppClientScript = `    const els = {
     loadReviewPanelPrefs()
     resizePrompt()
 
-    Promise.all([refreshStatus(), refreshModels(), refreshChanges()]).catch((error) => {
+    async function initializeApp() {
+      await refreshStatus()
+      await Promise.all([refreshModels(), refreshChanges()])
+    }
+
+    initializeApp().catch((error) => {
       setToast(els.authToast, error.message, true)
       updateAuthGate("无法完成初始化")
     })`

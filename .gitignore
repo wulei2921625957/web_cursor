@@ -9,6 +9,7 @@
 !.vscode/settings.json
 
 # Local environment and secrets
+coding-agent.config.json
 .env
 .env.*
 !.env.example
