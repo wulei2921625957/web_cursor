@@ -30,6 +30,10 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
           <span class="icon">+</span>
           <span>新对话</span>
         </button>
+        <button class="nav-button secondary" id="newWorktreeSessionBtn" type="button">
+          <span class="icon">↥</span>
+          <span>Worktree</span>
+        </button>
       </nav>
 
       <form class="open-project" id="openProjectForm">
@@ -51,6 +55,9 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
             <div class="page-subtitle" id="cwd">启动时未指定项目</div>
           </div>
           <div class="toolbar">
+            <span class="workspace-badge" id="workspaceBadge" hidden>Local</span>
+            <button id="moveWorkspaceBtn" class="workspace-action" type="button" title="迁移会话工作区" hidden>迁移</button>
+            <button id="discardSessionBtn" class="workspace-action danger" type="button" title="撤销本轮会话变更" hidden>撤销</button>
             <button id="reviewToggleBtn" class="review-toggle" type="button" aria-pressed="true" title="隐藏审查">审查</button>
           </div>
         </header>
@@ -89,9 +96,11 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 	                </label>
 	                <button class="guide-toggle" id="guideModeBtn" type="button" aria-pressed="false" title="引导纠正" hidden>引导</button>
 	                <div class="model-picker" id="modelPicker">
-	                  <select class="model-select model-base-select" id="modelSelect" aria-label="选择模型">
-	                    <option value="">加载模型</option>
-	                  </select>
+	                  <button class="model-select model-base-button" id="modelSelect" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="选择模型">加载模型</button>
+	                  <div class="model-menu" id="modelMenu" role="dialog" aria-label="选择模型" hidden>
+	                    <input class="model-search" id="modelSearch" type="search" placeholder="搜索模型" autocomplete="off">
+	                    <div class="model-list" id="modelList" role="listbox"></div>
+	                  </div>
 	                  <button class="model-param-toggle" id="modelParamToggle" type="button" aria-expanded="false" aria-label="模型参数" title="模型参数" hidden>参数</button>
 	                  <div class="model-param-popover" id="modelParamPopover" role="dialog" aria-label="模型参数" hidden>
 	                    <div class="model-param-list" id="modelParamList"></div>
@@ -118,7 +127,8 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
         </header>
 
         <div class="review-switcher">
-          <button class="review-tab active" type="button">上轮对话</button>
+          <button class="review-tab active" id="changesTab" type="button">上轮对话</button>
+          <button class="review-tab" id="browserTab" type="button">浏览器</button>
           <div class="changes-summary" id="changesSummary">请先打开项目。</div>
         </div>
 
@@ -131,6 +141,23 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
             <input id="changesFilter" autocomplete="off" placeholder="筛选文件...">
             <div class="change-tree" id="changeTree"></div>
           </aside>
+        </div>
+
+        <div class="browser-workspace" id="browserWorkspace" hidden>
+          <form class="browser-bar" id="browserForm">
+            <input id="browserUrl" type="url" placeholder="http://localhost:3000" autocomplete="off">
+            <button id="browserOpenBtn" type="submit">打开</button>
+            <button id="browserAnnotateBtn" type="button" aria-pressed="false">标注</button>
+          </form>
+          <div class="browser-stage" id="browserStage">
+            <iframe id="browserFrame" title="页面预览" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+            <div class="browser-overlay" id="browserOverlay" aria-label="页面标注层"></div>
+          </div>
+          <div class="browser-comments" id="browserComments"></div>
+          <form class="browser-feedback" id="browserFeedbackForm">
+            <textarea id="browserFeedback" placeholder="记录这个页面上的视觉问题"></textarea>
+            <button id="browserFeedbackBtn" type="submit">发送反馈</button>
+          </form>
         </div>
       </aside>
     </main>

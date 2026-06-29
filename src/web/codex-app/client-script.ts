@@ -11,6 +11,19 @@ export const codexAppClientScript = `    const els = {
       authStatus: document.getElementById("authStatus"),
       authSubmitBtn: document.getElementById("authSubmitBtn"),
       authToast: document.getElementById("authToast"),
+      browserAnnotateBtn: document.getElementById("browserAnnotateBtn"),
+      browserComments: document.getElementById("browserComments"),
+      browserFeedback: document.getElementById("browserFeedback"),
+      browserFeedbackBtn: document.getElementById("browserFeedbackBtn"),
+      browserFeedbackForm: document.getElementById("browserFeedbackForm"),
+      browserFrame: document.getElementById("browserFrame"),
+      browserForm: document.getElementById("browserForm"),
+      browserOpenBtn: document.getElementById("browserOpenBtn"),
+      browserOverlay: document.getElementById("browserOverlay"),
+      browserStage: document.getElementById("browserStage"),
+      browserTab: document.getElementById("browserTab"),
+      browserUrl: document.getElementById("browserUrl"),
+      browserWorkspace: document.getElementById("browserWorkspace"),
       changesFilter: document.getElementById("changesFilter"),
       changesFloat: document.getElementById("changesFloat"),
       changesFloatAdd: document.getElementById("changesFloatAdd"),
@@ -18,6 +31,7 @@ export const codexAppClientScript = `    const els = {
       changesFloatLabel: document.getElementById("changesFloatLabel"),
       changesList: document.getElementById("changesList"),
       changesSummary: document.getElementById("changesSummary"),
+      changesTab: document.getElementById("changesTab"),
       changeTree: document.getElementById("changeTree"),
       composer: document.getElementById("composer"),
       conversation: document.getElementById("conversation"),
@@ -27,16 +41,22 @@ export const codexAppClientScript = `    const els = {
       contextPopoverTitle: document.getElementById("contextPopoverTitle"),
       contextPopoverTokens: document.getElementById("contextPopoverTokens"),
       cwd: document.getElementById("cwd"),
+      discardSessionBtn: document.getElementById("discardSessionBtn"),
       main: document.getElementById("main"),
 	      messages: document.getElementById("messages"),
+	      modelList: document.getElementById("modelList"),
+	      modelMenu: document.getElementById("modelMenu"),
 	      modelPicker: document.getElementById("modelPicker"),
 	      modelParamList: document.getElementById("modelParamList"),
 	      modelParamPopover: document.getElementById("modelParamPopover"),
 	      modelParamToggle: document.getElementById("modelParamToggle"),
+	      modelSearch: document.getElementById("modelSearch"),
 	      modelSelect: document.getElementById("modelSelect"),
+      moveWorkspaceBtn: document.getElementById("moveWorkspaceBtn"),
 	      guideModeBtn: document.getElementById("guideModeBtn"),
 	      multiAgentMode: document.getElementById("multiAgentMode"),
 	      newSessionBtn: document.getElementById("newSessionBtn"),
+      newWorktreeSessionBtn: document.getElementById("newWorktreeSessionBtn"),
       openProjectBtn: document.getElementById("openProjectBtn"),
       openProjectForm: document.getElementById("openProjectForm"),
       pageTitle: document.getElementById("pageTitle"),
@@ -52,6 +72,7 @@ export const codexAppClientScript = `    const els = {
       scrollBottomBtn: document.getElementById("scrollBottomBtn"),
       sendBtn: document.getElementById("sendBtn"),
       sidePanel: document.getElementById("sidePanel"),
+      workspaceBadge: document.getElementById("workspaceBadge"),
     }
 
     let state = {
@@ -96,6 +117,7 @@ export const codexAppClientScript = `    const els = {
     let latestChanges = { available: false, files: [], message: "请先打开项目。" }
     let selectedChangePath = ""
     let modelChoices = []
+    let modelSearchQuery = ""
     let currentModel = null
     let pendingAttachments = []
     let attachmentIdCounter = 0
@@ -105,9 +127,15 @@ export const codexAppClientScript = `    const els = {
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
+    const MODEL_SWITCH_SESSION_WARNING = "会话中切换模型，或许会有降智影响。是否继续切换？"
     let reviewPanelHidden = false
     let reviewPanelWidth = 0
     let reviewResizeState = null
+    let reviewMode = "changes"
+    let browserAnnotating = false
+    let browserCommentId = 0
+    let browserComments = []
+    let browserDraftPoint = null
     let devReloadReady = false
     let devReloadSource = null
 
@@ -428,8 +456,24 @@ export const codexAppClientScript = `    const els = {
       els.authSubmitBtn.textContent = authBusy ? "正在验证" : "进入"
       els.authStatus.classList.toggle("loading", authBusy)
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
+      els.newWorktreeSessionBtn.disabled = !hasProject || !modelsLoaded || busy
+      const hasBrowserUrl = Boolean(els.browserUrl.value.trim() || els.browserFrame.src)
+      els.browserFeedback.disabled = !hasSession
+      els.browserFeedbackBtn.disabled =
+        !hasSession || !hasBrowserUrl || !els.browserFeedback.value.trim()
+      els.browserAnnotateBtn.disabled = !hasBrowserUrl
+      els.browserOpenBtn.disabled = !els.browserUrl.value.trim()
+      els.moveWorkspaceBtn.hidden = !hasSession
+      els.discardSessionBtn.hidden = !hasSession
+      els.workspaceBadge.hidden = !hasSession
+      els.moveWorkspaceBtn.disabled = activeBusy || !hasSession
+      els.discardSessionBtn.disabled = activeBusy || !hasSession
 	      els.modelSelect.disabled = activeBusy || !modelsLoaded
+	      els.modelSearch.disabled = activeBusy || !modelsLoaded
 	      els.modelParamToggle.disabled = activeBusy || !modelsLoaded || els.modelParamToggle.hidden
+      for (const control of els.modelList.querySelectorAll("button")) {
+        control.disabled = activeBusy || !modelsLoaded
+      }
       for (const control of els.modelParamList.querySelectorAll("button")) {
         control.disabled = activeBusy || !modelsLoaded
       }
@@ -685,6 +729,13 @@ export const codexAppClientScript = `    const els = {
             label.textContent = session.title
             sessionButton.appendChild(marker)
             sessionButton.appendChild(label)
+            if (session.workspaceMode === "worktree") {
+              const badge = document.createElement("span")
+              badge.className = "session-workspace-badge"
+              badge.textContent = "W"
+              badge.title = session.workspaceCwd || "Worktree"
+              sessionButton.appendChild(badge)
+            }
 
             const deleteButton = document.createElement("button")
             deleteButton.type = "button"
@@ -711,18 +762,29 @@ export const codexAppClientScript = `    const els = {
     function renderHeader() {
       if (state.activeSession) {
         els.pageTitle.textContent = state.activeSession.title
-        els.cwd.textContent = state.activeProject ? state.activeProject.cwd : ""
+        els.cwd.textContent = state.activeSession.workspaceCwd || (state.activeProject ? state.activeProject.cwd : "")
+        const mode = state.activeSession.workspaceMode === "worktree" ? "Worktree" : "Local"
+        els.workspaceBadge.textContent = mode
+        els.workspaceBadge.dataset.mode = state.activeSession.workspaceMode || "local"
+        els.moveWorkspaceBtn.textContent = mode === "Worktree" ? "迁回 Local" : "迁到 Worktree"
+        els.moveWorkspaceBtn.title = mode === "Worktree" ? "把会话 diff 应用回 Local 并切换会话工作区" : "创建独立 Git worktree 并切换会话工作区"
         return
       }
 
       if (state.activeProject) {
         els.pageTitle.textContent = state.activeProject.name
         els.cwd.textContent = state.activeProject.cwd
+        els.workspaceBadge.hidden = true
+        els.moveWorkspaceBtn.hidden = true
+        els.discardSessionBtn.hidden = true
         return
       }
 
       els.pageTitle.textContent = "打开项目"
       els.cwd.textContent = "当前没有打开项目"
+      els.workspaceBadge.hidden = true
+      els.moveWorkspaceBtn.hidden = true
+      els.discardSessionBtn.hidden = true
     }
 
     function messagesBottomDistance() {
@@ -2929,36 +2991,23 @@ export const codexAppClientScript = `    const els = {
       const groups = buildModelChoiceGroups(modelChoices)
       const currentChoice = findModelChoice(modelChoices, currentModel)
       const selectedGroupId = currentChoice?.value?.id || currentModel?.id || groups[0]?.id || ""
-      els.modelSelect.textContent = ""
+      els.modelList.textContent = ""
       els.modelParamList.textContent = ""
+      els.modelSelect.dataset.modelId = selectedGroupId
 
       if (modelChoices.length === 0) {
-        const option = document.createElement("option")
-        option.value = ""
-        option.textContent = state.modelsLoaded ? "没有可用模型" : "加载模型"
-        option.selected = true
-        els.modelSelect.appendChild(option)
+        els.modelSelect.textContent = state.modelsLoaded ? "没有可用模型" : "加载模型"
+        els.modelSelect.dataset.modelId = ""
         els.modelParamToggle.hidden = true
+        renderModelMenu([], "")
+        setModelMenuOpen(false)
         setModelParamPopoverOpen(false)
         return
       }
 
-      if (currentModel?.id && !groups.some((group) => group.id === currentModel.id)) {
-        const option = document.createElement("option")
-        option.value = currentModel.id
-        option.textContent = currentModel.id
-        option.selected = true
-        els.modelSelect.appendChild(option)
-      }
-
-      for (const group of groups) {
-        const option = document.createElement("option")
-        option.value = group.id
-        option.textContent = group.id
-        option.title = group.id
-        option.selected = group.id === selectedGroupId
-        els.modelSelect.appendChild(option)
-      }
+      els.modelSelect.textContent = selectedGroupId || "选择模型"
+      els.modelSelect.title = selectedGroupId || "选择模型"
+      renderModelMenu(groups, selectedGroupId)
 
       const selectedGroup = groups.find((group) => group.id === selectedGroupId)
       let variantChoices = selectedGroup?.choices || (currentModel ? [{ label: currentKey, value: currentModel }] : [])
@@ -2984,7 +3033,103 @@ export const codexAppClientScript = `    const els = {
         byId.get(id).choices.push(choice)
       }
 
-      return Array.from(byId.values())
+      return Array.from(byId.values()).sort(compareModelGroups)
+    }
+
+    function renderModelMenu(groups, selectedGroupId) {
+      els.modelList.textContent = ""
+      const query = normalizeModelSearch(modelSearchQuery)
+      const visibleGroups = query
+        ? groups.filter((group) => normalizeModelSearch(group.id).includes(query))
+        : groups
+
+      if (visibleGroups.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "model-empty"
+        empty.textContent = "没有匹配模型"
+        els.modelList.appendChild(empty)
+        return
+      }
+
+      for (const group of visibleGroups) {
+        const option = document.createElement("button")
+        const active = group.id === selectedGroupId
+        option.type = "button"
+        option.className = "model-option" + (active ? " active" : "")
+        option.dataset.modelId = group.id
+        option.setAttribute("role", "option")
+        option.setAttribute("aria-selected", active ? "true" : "false")
+        option.title = group.id
+
+        const check = document.createElement("span")
+        check.className = "model-option-check"
+        check.textContent = active ? "✓" : ""
+        option.appendChild(check)
+
+        const label = document.createElement("span")
+        label.className = "model-option-label"
+        label.textContent = group.id
+        option.appendChild(label)
+
+        option.addEventListener("click", () => {
+          selectModelGroup(group.id)
+        })
+
+        els.modelList.appendChild(option)
+      }
+    }
+
+    function selectModelGroup(modelId) {
+      if (isActiveSessionRunning()) return
+      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === modelId)
+      if (!group) return
+
+      const currentKey = modelSelectionKey(currentModel)
+      const choice =
+        group.choices.find((item) => modelSelectionKey(item.value) === currentKey) ||
+        group.choices[0]
+      setModelMenuOpen(false)
+      if (choice && modelSelectionKey(choice.value) !== currentKey) {
+        void selectModel(choice.value)
+      }
+    }
+
+    function compareModelGroups(left, right) {
+      const leftRank = modelFamilyRank(left.id)
+      const rightRank = modelFamilyRank(right.id)
+      if (leftRank !== rightRank) return leftRank - rightRank
+
+      const leftNumbers = modelSortNumbers(left.id)
+      const rightNumbers = modelSortNumbers(right.id)
+      const length = Math.max(leftNumbers.length, rightNumbers.length)
+      for (let index = 0; index < length; index += 1) {
+        const leftNumber = leftNumbers[index] ?? -1
+        const rightNumber = rightNumbers[index] ?? -1
+        if (leftNumber !== rightNumber) return rightNumber - leftNumber
+      }
+
+      return left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: "base" })
+    }
+
+    function modelFamilyRank(id) {
+      const normalized = String(id).toLowerCase()
+      if (normalized === "default") return 0
+      if (normalized.startsWith("composer")) return 1
+      if (normalized.startsWith("gpt")) return 2
+      if (normalized.startsWith("claude")) return 3
+      if (normalized.startsWith("gemini")) return 4
+      if (normalized.startsWith("grok")) return 5
+      if (normalized.startsWith("kimi")) return 6
+      if (normalized.startsWith("glm")) return 7
+      return 8
+    }
+
+    function modelSortNumbers(id) {
+      return (String(id).match(/\\d+(?:\\.\\d+)?/g) || []).map(Number)
+    }
+
+    function normalizeModelSearch(value) {
+      return String(value || "").trim().toLowerCase()
     }
 
     function renderModelParamControls(choices, currentKey, keepOpen) {
@@ -3090,7 +3235,7 @@ export const codexAppClientScript = `    const els = {
 
     function selectModelParamValue(paramId, value) {
       if (isActiveSessionRunning()) return
-      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === els.modelSelect.value)
+      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === els.modelSelect.dataset.modelId)
       if (!group) return
 
       const currentKey = modelSelectionKey(currentModel)
@@ -3145,6 +3290,19 @@ export const codexAppClientScript = `    const els = {
       const shouldOpen = Boolean(open) && !els.modelParamToggle.hidden
       els.modelParamPopover.hidden = !shouldOpen
       els.modelParamToggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false")
+    }
+
+    function setModelMenuOpen(open) {
+      const shouldOpen = Boolean(open) && modelChoices.length > 0
+      els.modelMenu.hidden = !shouldOpen
+      els.modelSelect.setAttribute("aria-expanded", shouldOpen ? "true" : "false")
+      if (shouldOpen) {
+        els.modelSearch.value = modelSearchQuery
+        window.requestAnimationFrame(() => {
+          els.modelSearch.focus()
+          els.modelSearch.select()
+        })
+      }
     }
 
     function modelParamSummary(model, paramIds) {
@@ -3226,6 +3384,9 @@ export const codexAppClientScript = `    const els = {
 
     async function selectModel(model) {
       if (!model || isActiveSessionRunning()) return
+      if (activeSessionHasRunHistory() && !window.confirm(MODEL_SWITCH_SESSION_WARNING)) {
+        return
+      }
       try {
         const result = await postJson("/api/model", { model })
         currentModel = result.current || model
@@ -3256,6 +3417,22 @@ export const codexAppClientScript = `    const els = {
       return params ? model.id + "?" + params : model.id
     }
 
+    function activeSessionHasRunHistory() {
+      const sessionId = state.activeSessionId
+      if (!sessionId) return false
+      return activeMessages(sessionId).some(isRunHistoryMessage)
+    }
+
+    function isRunHistoryMessage(message) {
+      const tokens = messageKindTokens(message)
+      return tokens.some((token) =>
+        token === "user" ||
+        token === "assistant" ||
+        token === "activity" ||
+        token === "multi"
+      )
+    }
+
     async function refreshChanges(sessionId) {
       const targetSessionId = sessionId || state.activeSessionId || ""
       const url = targetSessionId
@@ -3265,6 +3442,133 @@ export const codexAppClientScript = `    const els = {
       const changes = await response.json()
       if (targetSessionId && targetSessionId !== state.activeSessionId) return
       renderChanges(changes)
+    }
+
+    function setReviewMode(mode) {
+      reviewMode = mode === "browser" ? "browser" : "changes"
+      const browser = reviewMode === "browser"
+      els.reviewWorkspace.hidden = browser
+      els.browserWorkspace.hidden = !browser
+      els.changesSummary.hidden = browser
+      els.changesTab.classList.toggle("active", !browser)
+      els.browserTab.classList.toggle("active", browser)
+    }
+
+    function openBrowserPreview(url) {
+      const normalized = normalizeBrowserUrl(url)
+      if (!normalized) return
+      els.browserUrl.value = normalized
+      els.browserFrame.src = normalized
+      browserDraftPoint = null
+      browserComments = []
+      renderBrowserComments()
+      setReviewMode("browser")
+      updateControls()
+    }
+
+    function normalizeBrowserUrl(value) {
+      const raw = String(value || "").trim()
+      if (!raw) return ""
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw
+      if (/^(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?(?:\\/|$)/.test(raw)) {
+        return "http://" + raw
+      }
+      return "https://" + raw
+    }
+
+    function setBrowserAnnotating(enabled) {
+      browserAnnotating = Boolean(enabled)
+      els.browserAnnotateBtn.classList.toggle("active", browserAnnotating)
+      els.browserAnnotateBtn.setAttribute("aria-pressed", browserAnnotating ? "true" : "false")
+      els.browserStage.classList.toggle("annotating", browserAnnotating)
+    }
+
+    function draftBrowserPoint(event) {
+      if (!browserAnnotating) return
+      const rect = els.browserOverlay.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+      browserDraftPoint = {
+        x: Math.round(((event.clientX - rect.left) / rect.width) * 1000) / 10,
+        y: Math.round(((event.clientY - rect.top) / rect.height) * 1000) / 10,
+      }
+      els.browserFeedback.placeholder =
+        "描述标注点 " + browserDraftPoint.x + "%, " + browserDraftPoint.y + "% 的问题"
+      els.browserFeedback.focus()
+      renderBrowserComments()
+    }
+
+    function submitBrowserFeedback() {
+      const text = els.browserFeedback.value.trim()
+      const url = els.browserFrame.src || normalizeBrowserUrl(els.browserUrl.value)
+      if (!text || !url || !state.activeSessionId) return
+      const comment = {
+        id: ++browserCommentId,
+        point: browserDraftPoint,
+        text,
+        url,
+      }
+      browserComments.push(comment)
+      browserDraftPoint = null
+      els.browserFeedback.value = ""
+      els.browserFeedback.placeholder = "记录这个页面上的视觉问题"
+      appendBrowserCommentToPrompt(comment)
+      renderBrowserComments()
+      updateControls()
+    }
+
+    function appendBrowserCommentToPrompt(comment) {
+      const point = comment.point
+        ? " @ " + comment.point.x + "%, " + comment.point.y + "%"
+        : ""
+      const block = [
+        "浏览器视觉反馈：" + comment.url + point,
+        comment.text,
+      ].join("\\n")
+      els.prompt.value = [els.prompt.value.trim(), block].filter(Boolean).join("\\n\\n")
+      els.prompt.focus()
+    }
+
+    function renderBrowserComments() {
+      els.browserComments.textContent = ""
+      els.browserOverlay.textContent = ""
+
+      const draftPoints = browserDraftPoint
+        ? [{ id: "draft", point: browserDraftPoint, text: "新标注" }]
+        : []
+      for (const item of browserComments.concat(draftPoints)) {
+        if (item.point) {
+          const marker = document.createElement("span")
+          marker.className = "browser-marker" + (item.id === "draft" ? " draft" : "")
+          marker.style.left = item.point.x + "%"
+          marker.style.top = item.point.y + "%"
+          marker.textContent = item.id === "draft" ? "+" : String(item.id)
+          marker.title = item.text
+          els.browserOverlay.appendChild(marker)
+        }
+      }
+
+      if (browserComments.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "browser-comment-empty"
+        empty.textContent = "打开页面后可开启标注并把视觉反馈发送到当前会话。"
+        els.browserComments.appendChild(empty)
+        return
+      }
+
+      for (const comment of browserComments) {
+        const row = document.createElement("div")
+        row.className = "browser-comment"
+        const label = document.createElement("span")
+        label.className = "browser-comment-label"
+        label.textContent = comment.point
+          ? "#" + comment.id + " " + comment.point.x + "%, " + comment.point.y + "%"
+          : "#" + comment.id
+        const body = document.createElement("span")
+        body.textContent = comment.text
+        row.appendChild(label)
+        row.appendChild(body)
+        els.browserComments.appendChild(row)
+      }
     }
 
     function renderChanges(changes) {
@@ -3829,21 +4133,68 @@ export const codexAppClientScript = `    const els = {
       }
     }
 
-    async function createNewSession() {
+    async function createNewSession(workspaceMode) {
       try {
-		        const result = await postJson("/api/sessions")
-		        applyState(result)
-	        resetStreamingState(result.activeSessionId)
+        const mode = workspaceMode === "worktree" ? "worktree" : "local"
+	        const result = await postJson("/api/sessions", { workspaceMode: mode })
+	        applyState(result)
+        const sessionId = result.activeSessionId
+        if (result.reused) {
+          activeMessages(sessionId)
+          activeQueuedRuns(sessionId)
+        } else {
+          resetStreamingState(sessionId)
+          messagesBySession[sessionId] = []
+          queuedRunsBySession[sessionId] = []
+        }
         clearPendingAttachments()
 	        messagesAutoFollow = true
-	        messagesBySession[result.activeSessionId] = []
-        queuedRunsBySession[result.activeSessionId] = []
-        appendMeta("[新会话] " + result.message)
+        appendMeta((result.reused ? "[会话] " : "[新会话] ") + result.message)
         await refreshModels().catch(() => {})
         await refreshChanges()
       } catch (error) {
         if (state.activeSessionId) appendMeta("[错误] " + error.message, true)
         else setToast(els.projectToast, error.message, true)
+      }
+    }
+
+    async function moveActiveSessionWorkspace() {
+      const session = state.activeSession
+      if (!session || isActiveSessionRunning()) return
+      const targetMode = session.workspaceMode === "worktree" ? "local" : "worktree"
+      const message = targetMode === "worktree"
+        ? "迁移到 Worktree？当前 diff 会复制到新的隔离工作区，Local 目录不会自动清理。"
+        : "迁回 Local？Worktree 当前 diff 会应用到 Local，若 Local 有冲突会失败。"
+      if (!window.confirm(message)) return
+
+      try {
+        const result = await postJson("/api/sessions/workspace", {
+          carryChanges: true,
+          sessionId: session.id,
+          workspaceMode: targetMode,
+        })
+        applyState(result)
+        appendMeta("[工作区] " + (result.message || "会话工作区已更新。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      }
+    }
+
+    async function discardActiveSessionChanges() {
+      const session = state.activeSession
+      if (!session || isActiveSessionRunning()) return
+      if (!window.confirm("撤销当前会话本轮变更？这会把会话工作区还原到本轮任务开始前的 Git tree。")) {
+        return
+      }
+
+      try {
+        const result = await postJson("/api/sessions/discard", { sessionId: session.id })
+        applyState(result)
+        appendMeta("[撤销] " + (result.message || "已处理撤销。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
       }
     }
 
@@ -3873,7 +4224,10 @@ export const codexAppClientScript = `    const els = {
       els.attachmentInput.value = ""
     })
 
-    els.newSessionBtn.addEventListener("click", createNewSession)
+    els.newSessionBtn.addEventListener("click", () => createNewSession("local"))
+    els.newWorktreeSessionBtn.addEventListener("click", () => createNewSession("worktree"))
+    els.moveWorkspaceBtn.addEventListener("click", moveActiveSessionWorkspace)
+    els.discardSessionBtn.addEventListener("click", discardActiveSessionChanges)
     els.guideModeBtn.addEventListener("click", () => {
       if (!els.guideModeBtn.disabled) setGuideMode(!guideMode)
     })
@@ -3881,6 +4235,23 @@ export const codexAppClientScript = `    const els = {
     els.scrollBottomBtn.addEventListener("click", () => scrollMessagesToBottom("smooth"))
     els.changesFloat.addEventListener("click", () => {
       setReviewPanelHidden(false)
+    })
+
+    els.changesTab.addEventListener("click", () => setReviewMode("changes"))
+    els.browserTab.addEventListener("click", () => setReviewMode("browser"))
+    els.browserForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      openBrowserPreview(els.browserUrl.value)
+    })
+    els.browserUrl.addEventListener("input", updateControls)
+    els.browserAnnotateBtn.addEventListener("click", () => {
+      if (!els.browserAnnotateBtn.disabled) setBrowserAnnotating(!browserAnnotating)
+    })
+    els.browserOverlay.addEventListener("click", draftBrowserPoint)
+    els.browserFeedback.addEventListener("input", updateControls)
+    els.browserFeedbackForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      submitBrowserFeedback()
     })
 
     els.authForm.addEventListener("submit", async (event) => {
@@ -3910,19 +4281,24 @@ export const codexAppClientScript = `    const els = {
       }
     })
 
-    els.modelSelect.addEventListener("change", () => {
-      const group = buildModelChoiceGroups(modelChoices).find((item) => item.id === els.modelSelect.value)
-      const currentKey = modelSelectionKey(currentModel)
-      const choice =
-        group?.choices.find((item) => modelSelectionKey(item.value) === currentKey) ||
-        group?.choices[0]
-      if (choice) {
-        void selectModel(choice.value)
-      }
+    els.modelSelect.addEventListener("click", (event) => {
+      event.stopPropagation()
+      setModelParamPopoverOpen(false)
+      setModelMenuOpen(els.modelMenu.hidden)
+    })
+
+    els.modelMenu.addEventListener("click", (event) => {
+      event.stopPropagation()
+    })
+
+    els.modelSearch.addEventListener("input", () => {
+      modelSearchQuery = els.modelSearch.value
+      renderModelMenu(buildModelChoiceGroups(modelChoices), els.modelSelect.dataset.modelId || "")
     })
 
     els.modelParamToggle.addEventListener("click", (event) => {
       event.stopPropagation()
+      setModelMenuOpen(false)
       setModelParamPopoverOpen(els.modelParamPopover.hidden)
     })
 
@@ -3932,12 +4308,14 @@ export const codexAppClientScript = `    const els = {
 
     document.addEventListener("click", (event) => {
       if (!els.modelPicker.contains(event.target)) {
+        setModelMenuOpen(false)
         setModelParamPopoverOpen(false)
       }
     })
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        setModelMenuOpen(false)
         setModelParamPopoverOpen(false)
       }
     })

@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    }
+  },
+  "plugins": [".coding-agent/plugins/example-plugin"],
+  "hooks": {
+    "PreRun": [
+      {
+        "command": "npm run typecheck",
+        "timeout": 120,
+        "statusMessage": "Running project typecheck before agent work"
+      }
+    ],
+    "PostRun": [
+      {
+        "command": "git status --short",
+        "timeout": 30,
+        "statusMessage": "Collecting Git status after agent work"
+      }
+    ]
+  }
+}

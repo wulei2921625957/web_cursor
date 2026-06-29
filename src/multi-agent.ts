@@ -1,6 +1,7 @@
 import { setMaxListeners } from "node:events"
 import {
   Agent,
+  type McpServerConfig,
   type ModelSelection,
   type Run,
   type RunResult,
@@ -71,6 +72,8 @@ type MultiAgentRunnerOptions = {
   apiKey: string
   cwd: string
   force: boolean
+  instructions?: string
+  mcpServers?: Record<string, McpServerConfig>
   model: ModelSelection
   modelLabel: string
   prompt: string
@@ -177,10 +180,17 @@ export class MultiAgentRunner {
       let text = ""
 
       try {
-        run = await planner.send(buildPlannerPrompt(this.options.prompt), {
-          mode: "agent",
-          ...(this.options.force ? { local: { force: true } } : {}),
-        })
+        run = await planner.send(
+          buildPlannerPrompt(this.options.prompt, this.options.instructions),
+          {
+            mode: "agent",
+            ...(this.options.mcpServers &&
+            Object.keys(this.options.mcpServers).length > 0
+              ? { mcpServers: this.options.mcpServers }
+              : {}),
+            ...(this.options.force ? { local: { force: true } } : {}),
+          }
+        )
         this.activeRuns.add(run)
 
         for await (const event of run.stream()) {
@@ -252,9 +262,12 @@ export class MultiAgentRunner {
     this.publish(true)
 
     try {
-      const prompt = buildTaskPrompt(task, this.state)
+      const prompt = buildTaskPrompt(task, this.state, this.options.instructions)
       run = await agent.send(prompt, {
         mode: "agent",
+        ...(this.options.mcpServers && Object.keys(this.options.mcpServers).length > 0
+          ? { mcpServers: this.options.mcpServers }
+          : {}),
         ...(this.options.force ? { local: { force: true } } : {}),
       })
       this.activeRuns.add(run)
@@ -408,7 +421,7 @@ export class MultiAgentRunner {
   }
 }
 
-function buildPlannerPrompt(prompt: string) {
+function buildPlannerPrompt(prompt: string, instructions = "") {
   return [
     "Create a small multi-agent execution plan for a coding task.",
     "Return only JSON. Do not use Markdown fences.",
@@ -422,13 +435,18 @@ function buildPlannerPrompt(prompt: string) {
     "- Verification tasks must depend on implementation tasks.",
     "- Every task prompt must be self-contained and mention whether it is read-only or may edit files.",
     "- Use ASCII ids.",
+    renderProjectInstructions(instructions),
     "",
     "User task:",
     prompt,
-  ].join("\n")
+  ].filter(Boolean).join("\n")
 }
 
-function buildTaskPrompt(task: MultiAgentTaskState, run: MultiAgentRunState) {
+function buildTaskPrompt(
+  task: MultiAgentTaskState,
+  run: MultiAgentRunState,
+  instructions = ""
+) {
   const upstream = buildUpstreamContext(task, run)
   return [
     "You are one subagent in a local multi-agent coding run.",
@@ -445,6 +463,7 @@ function buildTaskPrompt(task: MultiAgentTaskState, run: MultiAgentRunState) {
     "- Only edit files if this subtask explicitly asks for implementation or file changes.",
     "- If this is a read-only task, inspect and report findings without changing files.",
     "- End with a concise result summary, including files changed or commands run when relevant.",
+    renderProjectInstructions(instructions),
     "",
     upstream,
     "",
@@ -453,6 +472,21 @@ function buildTaskPrompt(task: MultiAgentTaskState, run: MultiAgentRunState) {
   ]
     .filter(Boolean)
     .join("\n")
+}
+
+function renderProjectInstructions(instructions = "") {
+  const text = instructions.trim()
+  if (!text) {
+    return ""
+  }
+
+  return [
+    "",
+    "Project instructions:",
+    text,
+    "",
+    "Follow these project instructions unless they conflict with higher-priority system or developer instructions.",
+  ].join("\n")
 }
 
 function buildUpstreamContext(task: MultiAgentTaskState, run: MultiAgentRunState) {

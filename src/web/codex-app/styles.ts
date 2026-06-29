@@ -315,6 +315,14 @@ export const codexAppStyles = `    :root {
       font-weight: 560;
     }
 
+    .nav-button.secondary {
+      color: var(--muted);
+    }
+
+    .nav-button.secondary:hover:not(:disabled) {
+      color: var(--text);
+    }
+
     .icon {
       display: inline-grid;
       width: 18px;
@@ -405,6 +413,21 @@ export const codexAppStyles = `    :root {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .session-workspace-badge {
+      display: inline-flex;
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 760;
+      line-height: 1;
     }
 
     .project-meta {
@@ -612,6 +635,36 @@ export const codexAppStyles = `    :root {
       font-size: 12px;
       font-weight: 620;
       padding: 0 11px;
+    }
+
+    .workspace-badge {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+
+    .workspace-badge[data-mode="worktree"] {
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+      color: var(--accent);
+    }
+
+    .workspace-action:hover:not(:disabled) {
+      border-color: var(--border);
+      background: var(--panel-soft);
+      color: var(--text);
+    }
+
+    .workspace-action.danger:hover:not(:disabled) {
+      border-color: color-mix(in srgb, #b42318 35%, var(--border));
+      color: #b42318;
     }
 
     .toolbar .review-toggle[aria-pressed="true"] {
@@ -1686,21 +1739,129 @@ export const codexAppStyles = `    :root {
     }
 
     .model-select {
+      display: inline-flex;
       min-height: 34px;
+      align-items: center;
       border: 0;
       border-radius: 999px;
       background: var(--panel-soft);
       color: var(--muted);
       font-size: 13px;
       font-weight: 620;
+      gap: 8px;
+      justify-content: space-between;
+      overflow: hidden;
       padding: 0 12px;
-      appearance: auto;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .model-base-select {
+    .model-base-button {
       flex: 1 1 112px;
       min-width: 0;
       width: clamp(126px, 15vw, 190px);
+    }
+
+    .model-base-button::after {
+      content: "⌄";
+      flex: 0 0 auto;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .model-base-button:hover:not(:disabled),
+    .model-base-button[aria-expanded="true"] {
+      background: color-mix(in srgb, var(--accent) 9%, var(--panel-soft));
+      color: var(--text);
+    }
+
+    .model-menu {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      z-index: 50;
+      display: grid;
+      width: min(360px, calc(100vw - 28px));
+      gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 10px;
+    }
+
+    .model-menu[hidden] {
+      display: none;
+    }
+
+    .model-search {
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 620;
+      padding: 0 10px;
+    }
+
+    .model-list {
+      display: grid;
+      max-height: min(360px, 52vh);
+      gap: 2px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .model-option,
+    .model-empty {
+      min-height: 32px;
+      border-radius: 7px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.2;
+      padding: 0 9px;
+      text-align: left;
+    }
+
+    .model-option {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .model-option:hover:not(:disabled),
+    .model-option.active {
+      background: var(--panel-soft);
+    }
+
+    .model-option.active {
+      color: var(--accent);
+    }
+
+    .model-option-check {
+      width: 12px;
+      flex: 0 0 12px;
+      color: currentColor;
+      font-size: 12px;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .model-option-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-empty {
+      display: flex;
+      align-items: center;
+      color: var(--muted);
     }
 
     .model-param-toggle {
@@ -1984,6 +2145,11 @@ export const codexAppStyles = `    :root {
       font-weight: 700;
     }
 
+    .review-tab.active {
+      color: var(--text);
+      outline: 1px solid var(--border);
+    }
+
     .changes-summary {
       display: inline-flex;
       min-width: 0;
@@ -2171,6 +2337,143 @@ export const codexAppStyles = `    :root {
       font-size: 12px;
     }
 
+    .browser-workspace {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: auto minmax(260px, 1fr) auto auto;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .browser-workspace[hidden] {
+      display: none;
+    }
+
+    .browser-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+    }
+
+    .browser-bar input,
+    .browser-feedback textarea {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--text);
+      font: inherit;
+    }
+
+    .browser-bar input {
+      height: 34px;
+      min-width: 0;
+      padding: 0 10px;
+    }
+
+    .browser-bar button,
+    .browser-feedback button {
+      min-height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 10px;
+    }
+
+    .browser-bar button.active {
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+      color: var(--accent);
+    }
+
+    .browser-stage {
+      position: relative;
+      min-height: 260px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: white;
+    }
+
+    .browser-stage iframe {
+      width: 100%;
+      height: 100%;
+      min-height: 420px;
+      border: 0;
+      background: white;
+    }
+
+    .browser-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .browser-stage.annotating .browser-overlay {
+      cursor: crosshair;
+      pointer-events: auto;
+    }
+
+    .browser-marker {
+      position: absolute;
+      display: inline-grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      transform: translate(-50%, -50%);
+      border: 2px solid white;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+      pointer-events: auto;
+    }
+
+    .browser-marker.draft {
+      background: #b42318;
+    }
+
+    .browser-comments {
+      display: grid;
+      max-height: 124px;
+      gap: 6px;
+      overflow: auto;
+    }
+
+    .browser-comment,
+    .browser-comment-empty {
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      padding: 8px;
+    }
+
+    .browser-comment-label {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .browser-feedback {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .browser-feedback textarea {
+      min-height: 58px;
+      resize: vertical;
+      padding: 9px 10px;
+    }
+
     .change-tree {
       min-height: 0;
       overflow: auto;
@@ -2327,8 +2630,13 @@ export const codexAppStyles = `    :root {
         max-width: 54vw;
       }
 
-      .model-base-select {
+      .model-base-button {
         width: clamp(96px, 28vw, 148px);
+      }
+
+      .model-menu {
+        left: -8px;
+        width: calc(100vw - 24px);
       }
 
       .model-param-toggle {

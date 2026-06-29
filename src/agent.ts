@@ -11,6 +11,7 @@ import {
   type SDKCustomTool,
   type SDKJsonValue,
   type SDKMessage,
+  type McpServerConfig,
   type SDKModel,
 } from "@cursor/sdk"
 import {
@@ -144,6 +145,8 @@ type CodingAgentSessionOptions = {
 }
 
 type SendPromptOptions = {
+  instructions?: string
+  mcpServers?: Record<string, McpServerConfig>
   prompt: string
   onEvent: (event: AgentEvent) => void
 }
@@ -346,10 +349,10 @@ export class CodingAgentSession {
     return { cancelled: true }
   }
 
-  async sendPrompt({ prompt, onEvent }: SendPromptOptions) {
+  async sendPrompt({ instructions, mcpServers, prompt, onEvent }: SendPromptOptions) {
     await this.compactContextIfNeeded(prompt, onEvent)
 
-    const result = await this.tryRunPrompt(prompt, onEvent)
+    const result = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers)
 
     if (result.ok) {
       return
@@ -367,7 +370,7 @@ export class CodingAgentSession {
       })
 
       if (compacted.compacted) {
-        const retry = await this.tryRunPrompt(prompt, onEvent)
+        const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers)
 
         if (retry.ok) {
           return
@@ -479,7 +482,9 @@ export class CodingAgentSession {
 
   private async tryRunPrompt(
     prompt: string,
-    onEvent: (event: AgentEvent) => void
+    onEvent: (event: AgentEvent) => void,
+    instructions = "",
+    mcpServers?: Record<string, McpServerConfig>
   ): Promise<
     { ok: true } | { ok: false; canRetryAfterCompaction: boolean; error: unknown }
   > {
@@ -494,8 +499,9 @@ export class CodingAgentSession {
       const agent = await this.getAgent()
       const memoryContext = this.memory.buildPromptContext()
       this.memory.recordPromptSnapshot(prompt, memoryContext)
-      run = await agent.send(buildPrompt(prompt, memoryContext), {
+      run = await agent.send(buildPrompt(prompt, memoryContext, instructions), {
         mode: "agent",
+        ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
         ...(this.mode === "local" ? { model: this.modelSelection } : {}),
         ...(this.mode === "local" && this.force ? { local: { force: true } } : {}),
       })
@@ -800,11 +806,23 @@ export function buildPrompt(
     recentEntries: [],
     recentText: "",
     summaryText: "",
-  }
+  },
+  instructions = ""
 ) {
   const parts = [AGENT_INSTRUCTIONS]
+  const instructionText = instructions.trim()
   const summary = memoryContext.summaryText.trim()
   const recentText = memoryContext.recentText.trim()
+
+  if (instructionText) {
+    parts.push(
+      "",
+      "Project instructions:",
+      instructionText,
+      "",
+      "Follow these project instructions unless they conflict with higher-priority system or developer instructions."
+    )
+  }
 
   if (summary) {
     parts.push(

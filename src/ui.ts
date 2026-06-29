@@ -3,11 +3,15 @@ import { execFileSync, spawn } from "node:child_process"
 import {
   accessSync,
   constants as fsConstants,
+  cpSync,
   existsSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs"
 import * as fs from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
@@ -28,6 +32,7 @@ import {
   type ModelChoice,
 } from "./agent.js"
 import { MultiAgentRunner, type MultiAgentRunState } from "./multi-agent.js"
+import { loadExtensionRuntime, runHooks } from "./extensions.js"
 import { normalizeSessionMemorySnapshot } from "./session-memory.js"
 import type { ModelSelection } from "@cursor/sdk"
 import { renderCodexAppHtml } from "./web/codex-app/render.js"
@@ -102,6 +107,17 @@ type UiProject = {
   sessions: UiAgentSession[]
 }
 
+type SessionWorkspaceMode = "local" | "worktree"
+
+type SessionWorkspace = {
+  baseRef?: string
+  createdAt?: number
+  cwd: string
+  mode: SessionWorkspaceMode
+  sourceCwd: string
+  worktreePath?: string
+}
+
 type UiAgentSession = {
   id: string
   agent: CodingAgentSession
@@ -112,6 +128,7 @@ type UiAgentSession = {
   projectId: string
   title: string
   updatedAt: number
+  workspace: SessionWorkspace
 }
 
 type UiMessage = {
@@ -202,6 +219,7 @@ type PersistedSession = {
   messages: UiMessage[]
   title: string
   updatedAt: number
+  workspace?: SessionWorkspace
 }
 
 const DEFAULT_MODEL = process.env.CURSOR_MODEL ?? "composer-2"
@@ -212,6 +230,7 @@ const MAX_RUN_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
 const MAX_ATTACHMENT_TEXT_PREVIEW_BYTES = 24 * 1024
 const LEGACY_PROJECT_CONFIG_FILE_NAME = "config.json"
 const PROJECT_CONFIG_FILE_NAME = "coding-agent.config.json"
+const WORKTREE_DIR_NAME = "worktrees"
 
 type UserConfig = {
   apiKey?: string
@@ -326,7 +345,9 @@ async function main() {
     project: UiProject,
     session: UiAgentSession
   ) => {
-    if (sameWorkspacePath(session.agent.workspaceCwd, project.cwd)) {
+    const workspace = normalizeSessionWorkspace(session.workspace, project.cwd)
+    session.workspace = workspace
+    if (sameWorkspacePath(session.agent.workspaceCwd, workspace.cwd)) {
       return false
     }
 
@@ -336,7 +357,7 @@ async function main() {
     session.agent = new CodingAgentSession({
       apiKey,
       context: options.context,
-      cwd: project.cwd,
+      cwd: workspace.cwd,
       force: options.force,
       initialState: { ...snapshot, model },
       model,
@@ -381,6 +402,9 @@ async function main() {
     running: isSessionRunning(session.id),
     title: session.title,
     updatedAt: session.updatedAt,
+    workspace: publicSessionWorkspace(session),
+    workspaceCwd: sessionWorkspaceCwd(session),
+    workspaceMode: session.workspace.mode,
   })
 
   const publicProject = (project: UiProject) => ({
@@ -462,14 +486,27 @@ async function main() {
     return project
   }
 
-  const createSession = (project: UiProject) => {
+  const createSession = async (
+    project: UiProject,
+    workspaceMode: SessionWorkspaceMode = "local"
+  ) => {
+    const reusableSession = findReusableEmptySession(project, workspaceMode)
+    if (reusableSession) {
+      activeProjectId = project.id
+      activeSessionId = reusableSession.id
+      reusableSession.updatedAt = Date.now()
+      await rebindSessionWorkspace(project, reusableSession)
+      return { session: reusableSession, reused: true }
+    }
+
     const now = Date.now()
+    const workspace = createLocalSessionWorkspace(project.cwd)
     const session: UiAgentSession = {
       id: createEntityId("session"),
       agent: new CodingAgentSession({
         apiKey,
         context: options.context,
-        cwd: project.cwd,
+        cwd: workspace.cwd,
         force: options.force,
         model: cloneModelSelection(selectedModel),
         sandboxOptions: options.sandboxOptions,
@@ -479,12 +516,53 @@ async function main() {
       projectId: project.id,
       title: `新会话 ${project.sessions.length + 1}`,
       updatedAt: now,
+      workspace,
+    }
+
+    if (workspaceMode === "worktree") {
+      await moveSessionToWorktree(project, session, { carryChanges: false })
     }
 
     project.sessions.unshift(session)
     activeProjectId = project.id
     activeSessionId = session.id
-    return session
+    return { session, reused: false }
+  }
+
+  const findReusableEmptySession = (
+    project: UiProject,
+    workspaceMode: SessionWorkspaceMode
+  ) =>
+    project.sessions.find((session) =>
+      isReusableEmptySession(session, workspaceMode)
+    ) ?? null
+
+  const isReusableEmptySession = (
+    session: UiAgentSession,
+    workspaceMode: SessionWorkspaceMode
+  ) => {
+    if (session.workspace.mode !== workspaceMode) return false
+    if (isSessionRunning(session.id)) return false
+    if (!isDefaultSessionTitle(session.title)) return false
+    if (session.changeBaselineTree || session.changeResultTree) return false
+    if (session.messages.some(isMeaningfulUiMessage)) return false
+
+    const snapshot = session.agent.snapshot()
+    if (snapshot.contextSummary.trim()) return false
+    if (snapshot.history.some(isMeaningfulContextEntry)) return false
+    if (snapshot.memory?.summaryText.trim()) return false
+    if (snapshot.memory?.recentEntries.some(isMeaningfulContextEntry)) return false
+    if (snapshot.memory?.transcriptEntries.some(isMeaningfulContextEntry)) {
+      return false
+    }
+    if (
+      session.workspace.mode === "worktree" &&
+      workspaceHasUncommittedChanges(sessionWorkspaceCwd(session))
+    ) {
+      return false
+    }
+
+    return true
   }
 
   const createPersistedSession = (
@@ -499,13 +577,14 @@ async function main() {
       ...persisted.agentState,
       model,
     }
+    const workspace = normalizeSessionWorkspace(persisted.workspace, project.cwd)
 
     return {
       id: persisted.id || createEntityId("session"),
       agent: new CodingAgentSession({
         apiKey,
         context: options.context,
-        cwd: project.cwd,
+        cwd: workspace.cwd,
         force: options.force,
         initialState: agentState,
         model,
@@ -518,7 +597,69 @@ async function main() {
       projectId: project.id,
       title: persisted.title?.trim() || "新会话",
       updatedAt: finiteTimestampOrNow(persisted.updatedAt),
+      workspace,
     }
+  }
+
+  const moveSessionToWorktree = async (
+    project: UiProject,
+    session: UiAgentSession,
+    { carryChanges }: { carryChanges: boolean }
+  ) => {
+    if (isSessionRunning(session.id)) {
+      throw new Error("这个会话正在执行中，结束或取消后再迁移。")
+    }
+
+    const previousCwd = sessionWorkspaceCwd(session)
+    const workspace = createManagedWorktree(project.cwd, session.id)
+    if (carryChanges && !sameWorkspacePath(previousCwd, workspace.cwd)) {
+      applyWorkspacePatch(previousCwd, workspace.cwd)
+    }
+
+    session.workspace = workspace
+    await rebindSessionWorkspace(project, session)
+    session.updatedAt = Date.now()
+    return session
+  }
+
+  const moveSessionToLocal = async (
+    project: UiProject,
+    session: UiAgentSession,
+    { carryChanges }: { carryChanges: boolean }
+  ) => {
+    if (isSessionRunning(session.id)) {
+      throw new Error("这个会话正在执行中，结束或取消后再迁移。")
+    }
+
+    const previousCwd = sessionWorkspaceCwd(session)
+    const previousWorkspace = session.workspace
+    if (carryChanges && !sameWorkspacePath(previousCwd, project.cwd)) {
+      applyWorkspacePatch(previousCwd, project.cwd)
+    }
+
+    session.workspace = createLocalSessionWorkspace(project.cwd)
+    await rebindSessionWorkspace(project, session)
+    await deleteManagedSessionWorktree({ ...session, workspace: previousWorkspace })
+    session.updatedAt = Date.now()
+    return session
+  }
+
+  const discardSessionChanges = async (session: UiAgentSession) => {
+    if (isSessionRunning(session.id)) {
+      throw new Error("这个会话正在执行中，结束或取消后再撤销。")
+    }
+
+    if (!session.changeBaselineTree) {
+      throw new Error("当前会话没有可撤销的本轮变更基线。")
+    }
+
+    const changed = restoreWorkspaceTree(
+      sessionWorkspaceCwd(session),
+      session.changeBaselineTree
+    )
+    recordSessionChangeResult(sessionWorkspaceCwd(session), session)
+    session.updatedAt = Date.now()
+    return changed
   }
 
   const deleteSession = async (sessionId: string) => {
@@ -543,7 +684,8 @@ async function main() {
       activeSessionId = null
     }
 
-    await deleteSessionAttachments(project.cwd, session.id)
+    await deleteSessionAttachments(sessionWorkspaceCwd(session), session.id)
+    await deleteManagedSessionWorktree(session)
     await session.agent.dispose().catch(() => {})
     return { project, session }
   }
@@ -558,6 +700,7 @@ async function main() {
       throw new Error("这个项目还有会话正在执行，结束或取消后再移除。")
     }
 
+    await Promise.all(project.sessions.map((session) => deleteManagedSessionWorktree(session)))
     await deleteProjectPersistedState(project.cwd, legacyStateFile)
 
     projects.delete(project.id)
@@ -653,6 +796,7 @@ async function main() {
               messages: session.messages,
               title: session.title,
               updatedAt: session.updatedAt,
+              workspace: session.workspace,
             })),
           },
         })
@@ -860,18 +1004,20 @@ async function main() {
 
     try {
       try {
-        activeSession.changeBaselineTree = createWorkspaceTree(activeProject.cwd)
-        activeSession.changeResultTree = undefined
         if (await rebindSessionWorkspace(activeProject, activeSession)) {
           await persistState().catch(() => {})
         }
+        activeSession.changeBaselineTree = createWorkspaceTree(
+          sessionWorkspaceCwd(activeSession)
+        )
+        activeSession.changeResultTree = undefined
       } catch (error) {
         send({ type: "error", message: getErrorMessage(error) })
         return
       }
 
       try {
-        const activeCwd = setProcessWorkspaceCwd(activeProject.cwd)
+        const activeCwd = setProcessWorkspaceCwd(sessionWorkspaceCwd(activeSession))
         assertWorkspaceReady(activeCwd)
       } catch (error) {
         send({ type: "error", message: getErrorMessage(error) })
@@ -886,7 +1032,7 @@ async function main() {
       let runPrompt = prompt
       try {
         const savedAttachments = await saveRunAttachments(
-          activeProject.cwd,
+          sessionWorkspaceCwd(activeSession),
           activeSession.id,
           attachmentInputs
         )
@@ -907,6 +1053,55 @@ async function main() {
       }
 
       runPrompt = buildRunModePrompt(runPrompt, mode)
+      const workspaceCwd = sessionWorkspaceCwd(activeSession)
+      let extensionRuntime: ReturnType<typeof loadExtensionRuntime>
+      try {
+        extensionRuntime = loadExtensionRuntime(workspaceCwd, runPrompt)
+        if (extensionRuntime.sources.length > 0) {
+          send({
+            type: "agent",
+            event: {
+              type: "task",
+              status: "扩展",
+              text: formatExtensionRuntimeStatus(extensionRuntime.sources),
+            },
+          })
+        }
+        runHooks(
+          extensionRuntime.hooks,
+          "UserPromptSubmit",
+          {
+            prompt: runPrompt,
+            sessionId: activeSession.id,
+            workspaceCwd,
+          },
+          workspaceCwd,
+          (message) =>
+            send({
+              type: "agent",
+              event: { type: "task", status: "Hook", text: message },
+            })
+        )
+        runHooks(
+          extensionRuntime.hooks,
+          "PreRun",
+          {
+            mode,
+            multiAgent,
+            sessionId: activeSession.id,
+            workspaceCwd,
+          },
+          workspaceCwd,
+          (message) =>
+            send({
+              type: "agent",
+              event: { type: "task", status: "Hook", text: message },
+            })
+        )
+      } catch (error) {
+        send({ type: "error", message: getErrorMessage(error) })
+        return
+      }
       send({ type: "started", mode: multiAgent ? "multi" : "single", runMode: mode })
 
       try {
@@ -914,8 +1109,10 @@ async function main() {
           const model = cloneModelSelection(activeSession.agent.model)
           const runner = new MultiAgentRunner({
             apiKey,
-            cwd: activeProject.cwd,
+            cwd: sessionWorkspaceCwd(activeSession),
             force: options.force,
+            instructions: extensionRuntime.instructions,
+            mcpServers: extensionRuntime.mcpServers,
             model,
             modelLabel: formatModelLabel(model),
             prompt: runPrompt,
@@ -927,13 +1124,30 @@ async function main() {
           activeSession.agent.addExternalSummary(summarizeMultiAgentRun(finalState))
         } else {
           await activeSession.agent.sendPrompt({
+            instructions: extensionRuntime.instructions,
+            mcpServers: extensionRuntime.mcpServers,
             prompt: runPrompt,
             onEvent: (event) => send({ type: "agent", event }),
           })
         }
+        runHooks(
+          extensionRuntime.hooks,
+          "PostRun",
+          {
+            sessionId: activeSession.id,
+            status: "finished",
+            workspaceCwd,
+          },
+          workspaceCwd,
+          (message) =>
+            send({
+              type: "agent",
+              event: { type: "task", status: "Hook", text: message },
+            })
+        )
         activeSession.updatedAt = Date.now()
         try {
-          recordSessionChangeResult(activeProject.cwd, activeSession)
+          recordSessionChangeResult(sessionWorkspaceCwd(activeSession), activeSession)
         } catch {}
         send({ type: "finished" })
       } catch (error) {
@@ -941,7 +1155,7 @@ async function main() {
       }
     } finally {
       try {
-        recordSessionChangeResult(activeProject.cwd, activeSession)
+        recordSessionChangeResult(sessionWorkspaceCwd(activeSession), activeSession)
       } catch {}
       state.active = false
       state.activeRunId = undefined
@@ -1062,7 +1276,7 @@ async function main() {
         sendJson(
           response,
           target
-            ? getSessionChanges(target.project.cwd, target.session)
+            ? getSessionChanges(sessionWorkspaceCwd(target.session), target.session)
             : { available: false, files: [], message: "请先在项目中新建会话。" }
         )
         return
@@ -1080,7 +1294,7 @@ async function main() {
         }
 
         const previewFile = await findSessionAttachmentPreviewFile(
-          project.cwd,
+          target ? sessionWorkspaceCwd(target.session) : project.cwd,
           previewSessionId,
           name
         )
@@ -1396,6 +1610,7 @@ async function main() {
         request.method === "POST" &&
         (url.pathname === "/api/new-session" || url.pathname === "/api/sessions")
       ) {
+        const body = await readJsonBody(request).catch(() => ({}))
         const project = getActiveProject()
         if (!project) {
           sendJson(response, { error: "请先打开项目。" }, 400)
@@ -1407,11 +1622,15 @@ async function main() {
           return
         }
 
-        const session = createSession(project)
+        const workspaceMode = sessionWorkspaceModeField(body, "workspaceMode")
+        const { session, reused } = await createSession(project, workspaceMode)
         await persistState()
         sendJson(response, {
           ...buildState(),
-          message: `已在 ${project.name} 中创建 ${session.title}。`,
+          reused,
+          message: reused
+            ? `已切换到 ${project.name} 中的空会话 ${session.title}。`
+            : `已在 ${project.name} 中创建 ${session.title}。`,
         })
         return
       }
@@ -1430,6 +1649,55 @@ async function main() {
         result.session.updatedAt = Date.now()
         await persistState()
         sendJson(response, buildState())
+        return
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/sessions/workspace") {
+        const body = await readJsonBody(request)
+        const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
+        const workspaceMode = sessionWorkspaceModeField(body, "workspaceMode")
+        const carryChanges = booleanField(body, "carryChanges", true)
+        const result = getRequestedSession(sessionId)
+
+        if (!result) {
+          sendJson(response, { error: "会话不存在。" }, 404)
+          return
+        }
+
+        if (workspaceMode === "worktree") {
+          await moveSessionToWorktree(result.project, result.session, { carryChanges })
+        } else {
+          await moveSessionToLocal(result.project, result.session, { carryChanges })
+        }
+
+        await persistState()
+        sendJson(
+          response,
+          buildState(
+            workspaceMode === "worktree"
+              ? "已将会话迁移到 Worktree。"
+              : "已将会话迁移到 Local。"
+          )
+        )
+        return
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/sessions/discard") {
+        const body = await readJsonBody(request)
+        const sessionId = stringField(body, "sessionId").trim() || activeSessionId || ""
+        const result = getRequestedSession(sessionId)
+
+        if (!result) {
+          sendJson(response, { error: "会话不存在。" }, 404)
+          return
+        }
+
+        const changed = await discardSessionChanges(result.session)
+        await persistState()
+        sendJson(
+          response,
+          buildState(changed ? "已撤销本轮会话变更。" : "本轮会话没有需要撤销的变更。")
+        )
         return
       }
 
@@ -2093,6 +2361,13 @@ function runSubmissionModeField(
   return stringField(body, name).trim() === "guide" ? "guide" : "normal"
 }
 
+function sessionWorkspaceModeField(
+  body: Record<string, unknown>,
+  name: string
+): SessionWorkspaceMode {
+  return stringField(body, name).trim() === "worktree" ? "worktree" : "local"
+}
+
 function runIdField(body: Record<string, unknown>, name: string) {
   const value = stringField(body, name).trim()
   return /^[A-Za-z0-9_-]{1,100}$/.test(value) ? value : ""
@@ -2461,6 +2736,28 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
+function formatExtensionRuntimeStatus(
+  sources: ReturnType<typeof loadExtensionRuntime>["sources"]
+) {
+  const counts = new Map<string, number>()
+  for (const source of sources) {
+    counts.set(source.kind, (counts.get(source.kind) ?? 0) + 1)
+  }
+  const labels = [
+    ["agents", "AGENTS"],
+    ["skill", "Skills"],
+    ["plugin", "Plugins"],
+    ["mcp", "MCP"],
+    ["hook", "Hooks"],
+  ]
+    .map(([kind, label]) => {
+      const count = counts.get(kind) ?? 0
+      return count > 0 ? `${label} ${count}` : ""
+    })
+    .filter(Boolean)
+  return labels.length > 0 ? `已加载 ${labels.join("，")}。` : "未加载扩展。"
+}
+
 function canPersistApiKey() {
   return Boolean(getProjectConfigFile())
 }
@@ -2570,6 +2867,123 @@ function getProjectStoragePaths(cwd: string): ProjectStoragePaths {
   return {
     dbFile: path.join(dir, "sessions.sqlite"),
     dir,
+  }
+}
+
+function getManagedWorktreeRoot() {
+  return path.join(getAppRoot(), ".session", WORKTREE_DIR_NAME)
+}
+
+function createManagedWorktree(projectCwd: string, sessionId: string): SessionWorkspace {
+  readGit(projectCwd, ["rev-parse", "--is-inside-work-tree"])
+  const baseRef = readGit(projectCwd, ["rev-parse", "--short", "HEAD"]).trim()
+  const root = getManagedWorktreeRoot()
+  const projectSlug =
+    sanitizePathSegment(path.basename(path.resolve(projectCwd))) || "project"
+  const worktreePath = path.join(
+    root,
+    `${projectSlug}-${sanitizePathSegment(sessionId) || createEntityId("session")}`
+  )
+
+  if (isUsableWorkspacePath(worktreePath)) {
+    readGit(worktreePath, ["rev-parse", "--is-inside-work-tree"])
+    return {
+      baseRef,
+      createdAt: Date.now(),
+      cwd: worktreePath,
+      mode: "worktree",
+      sourceCwd: path.resolve(projectCwd),
+      worktreePath,
+    }
+  }
+
+  mkdirSync(root, { recursive: true })
+  execFileSync(
+    "git",
+    ["-C", projectCwd, "worktree", "add", "--detach", worktreePath, "HEAD"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  )
+  copyWorktreeIncludes(projectCwd, worktreePath)
+
+  return {
+    baseRef,
+    createdAt: Date.now(),
+    cwd: worktreePath,
+    mode: "worktree",
+    sourceCwd: path.resolve(projectCwd),
+    worktreePath,
+  }
+}
+
+function copyWorktreeIncludes(sourceCwd: string, worktreePath: string) {
+  const includeFile = path.join(sourceCwd, ".worktreeinclude")
+  if (!isReadableFile(includeFile)) {
+    return
+  }
+
+  const patterns = readFileSync(includeFile, "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+  const relPaths = new Set<string>()
+
+  for (const pattern of patterns) {
+    const exactPath = path.resolve(sourceCwd, pattern)
+    if (isInsidePath(sourceCwd, exactPath) && existsSync(exactPath)) {
+      relPaths.add(path.relative(sourceCwd, exactPath))
+    }
+
+    for (const relPath of expandIgnoredPattern(sourceCwd, pattern)) {
+      relPaths.add(relPath)
+    }
+  }
+
+  for (const relPath of relPaths) {
+    const sourcePath = path.resolve(sourceCwd, relPath)
+    const targetPath = path.resolve(worktreePath, relPath)
+    if (!isInsidePath(sourceCwd, sourcePath) || !isInsidePath(worktreePath, targetPath)) {
+      continue
+    }
+    if (!existsSync(sourcePath) || existsSync(targetPath)) {
+      continue
+    }
+    try {
+      const stat = lstatSync(sourcePath)
+      if (stat.isSymbolicLink()) {
+        continue
+      }
+      mkdirSync(path.dirname(targetPath), { recursive: true })
+      cpSync(sourcePath, targetPath, {
+        dereference: false,
+        errorOnExist: true,
+        force: false,
+        recursive: stat.isDirectory(),
+      })
+    } catch {
+      // Worktree creation should not fail just because an optional local file was not copied.
+    }
+  }
+}
+
+function expandIgnoredPattern(sourceCwd: string, pattern: string) {
+  try {
+    return readGit(sourceCwd, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "-z",
+      "--",
+      pattern,
+    ])
+      .split("\0")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  } catch {
+    return []
   }
 }
 
@@ -2729,11 +3143,12 @@ function readProjectPersistedStateFromSqlite(
           created_at: number
           title: string
           updated_at: number
+          workspace_json: string | null
         },
         []
       >(
         [
-          "SELECT id, agent_state, change_baseline_tree, change_result_tree, created_at, title, updated_at",
+          "SELECT id, agent_state, change_baseline_tree, change_result_tree, created_at, title, updated_at, workspace_json",
           "FROM sessions",
           "ORDER BY position ASC, updated_at DESC",
         ].join(" ")
@@ -2765,6 +3180,10 @@ function readProjectPersistedStateFromSqlite(
         .all(session.id),
       title: session.title,
       updatedAt: session.updated_at,
+      workspace: parseJsonValue<SessionWorkspace | undefined>(
+        optionalString(session.workspace_json) ?? "",
+        undefined
+      ),
     }))
 
     return {
@@ -2812,8 +3231,8 @@ async function writeProjectPersistedState(state: PersistedProjectState) {
       const insertSession = db.query(
         [
           "INSERT INTO sessions",
-          "(id, position, title, created_at, updated_at, agent_state, change_baseline_tree, change_result_tree)",
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "(id, position, title, created_at, updated_at, agent_state, change_baseline_tree, change_result_tree, workspace_json)",
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ].join(" ")
       )
       const insertMessage = db.query(
@@ -2833,7 +3252,8 @@ async function writeProjectPersistedState(state: PersistedProjectState) {
           session.updatedAt,
           JSON.stringify(session.agentState),
           session.changeBaselineTree ?? null,
-          session.changeResultTree ?? null
+          session.changeResultTree ?? null,
+          JSON.stringify(session.workspace ?? null)
         )
         session.messages.forEach((message, messageIndex) => {
           insertMessage.run(session.id, messageIndex, message.kind, message.text)
@@ -2882,6 +3302,24 @@ async function deleteSessionAttachments(cwd: string, sessionId: string) {
   await fs.rm(uploadDir, { force: true, recursive: true })
 }
 
+async function deleteManagedSessionWorktree(session: UiAgentSession) {
+  if (session.workspace.mode !== "worktree" || !session.workspace.worktreePath) {
+    return
+  }
+
+  const worktreePath = path.resolve(session.workspace.worktreePath)
+  const managedRoot = getManagedWorktreeRoot()
+  if (!isInsidePath(managedRoot, worktreePath) || worktreePath === managedRoot) {
+    return
+  }
+
+  try {
+    readGit(session.workspace.sourceCwd, ["worktree", "remove", "--force", worktreePath])
+  } catch {
+    await fs.rm(worktreePath, { force: true, recursive: true })
+  }
+}
+
 async function deleteProjectAttachments(cwd: string) {
   const storage = getProjectStoragePaths(cwd)
   await fs.rm(path.join(storage.dir, "uploads"), { force: true, recursive: true })
@@ -2909,6 +3347,7 @@ function ensureProjectStateSchema(db: Database) {
       agent_state TEXT NOT NULL,
       change_baseline_tree TEXT,
       change_result_tree TEXT
+      workspace_json TEXT
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -2928,6 +3367,7 @@ function ensureProjectStateSchema(db: Database) {
 
   ensureColumn(db, "sessions", "change_baseline_tree", "TEXT")
   ensureColumn(db, "sessions", "change_result_tree", "TEXT")
+  ensureColumn(db, "sessions", "workspace_json", "TEXT")
 }
 
 function ensureColumn(db: Database, table: string, column: string, definition: string) {
@@ -3195,6 +3635,19 @@ function isContextEntryRole(
   )
 }
 
+function isMeaningfulUiMessage(message: UiMessage) {
+  const tokens = message.kind.split(/\s+/).filter(Boolean)
+  return tokens.some((token) =>
+    ["activity", "assistant", "multi", "queued", "user"].includes(token)
+  )
+}
+
+function isMeaningfulContextEntry(
+  entry: CodingAgentSessionSnapshot["history"][number]
+) {
+  return Boolean(entry.text.trim())
+}
+
 function normalizeUiMessages(value: unknown): UiMessage[] {
   if (!Array.isArray(value)) {
     return []
@@ -3244,12 +3697,100 @@ function normalizeModelSelection(
     : { id: record.id.trim() }
 }
 
+function normalizeSessionWorkspace(
+  value: unknown,
+  projectCwd: string
+): SessionWorkspace {
+  const fallback = createLocalSessionWorkspace(projectCwd)
+  if (!value || typeof value !== "object") {
+    return fallback
+  }
+
+  const record = value as Partial<SessionWorkspace>
+  const mode = record.mode === "worktree" ? "worktree" : "local"
+  const sourceCwd =
+    typeof record.sourceCwd === "string" && record.sourceCwd.trim()
+      ? path.resolve(record.sourceCwd)
+      : path.resolve(projectCwd)
+  const cwd =
+    typeof record.cwd === "string" && record.cwd.trim()
+      ? path.resolve(record.cwd)
+      : mode === "local"
+        ? sourceCwd
+        : fallback.cwd
+  const worktreePath =
+    typeof record.worktreePath === "string" && record.worktreePath.trim()
+      ? path.resolve(record.worktreePath)
+      : mode === "worktree"
+        ? cwd
+        : undefined
+
+  if (mode === "worktree" && worktreePath && isUsableWorkspacePath(worktreePath)) {
+    return {
+      baseRef: optionalString(record.baseRef) ?? undefined,
+      createdAt: finiteTimestampOrNow(record.createdAt),
+      cwd: worktreePath,
+      mode,
+      sourceCwd,
+      worktreePath,
+    }
+  }
+
+  return fallback
+}
+
+function createLocalSessionWorkspace(projectCwd: string): SessionWorkspace {
+  const cwd = path.resolve(projectCwd)
+  return {
+    cwd,
+    mode: "local",
+    sourceCwd: cwd,
+  }
+}
+
+function publicSessionWorkspace(session: UiAgentSession) {
+  return {
+    ...session.workspace,
+    label: sessionWorkspaceLabel(session),
+  }
+}
+
+function sessionWorkspaceCwd(session: UiAgentSession) {
+  return path.resolve(session.workspace.cwd || session.agent.workspaceCwd)
+}
+
+function workspaceHasUncommittedChanges(cwd: string) {
+  try {
+    readGit(cwd, ["rev-parse", "--is-inside-work-tree"])
+    return readGit(cwd, ["status", "--porcelain"]).trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+function sessionWorkspaceLabel(session: UiAgentSession) {
+  return session.workspace.mode === "worktree" ? "Worktree" : "Local"
+}
+
+function isReadableFile(filePath: string) {
+  try {
+    return statSync(filePath).isFile()
+  } catch {
+    return false
+  }
+}
+
 function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null
 }
 
 function sameWorkspacePath(left: string, right: string) {
   return path.resolve(left) === path.resolve(right)
+}
+
+function isInsidePath(root: string, target: string) {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 function dedupeStrings(values: string[]) {
@@ -3464,6 +4005,44 @@ function createWorkspaceTree(cwd: string) {
     return readGitWithEnv(cwd, ["write-tree"], env).trim()
   } finally {
     rmSync(indexDir, { force: true, recursive: true })
+  }
+}
+
+function createWorkspacePatch(cwd: string, fromTreeish = "HEAD") {
+  const currentTree = createWorkspaceTree(cwd)
+  return readGit(cwd, ["diff", "--binary", fromTreeish, currentTree, "--"])
+}
+
+function restoreWorkspaceTree(cwd: string, targetTree: string) {
+  const currentTree = createWorkspaceTree(cwd)
+  if (currentTree === targetTree) {
+    return false
+  }
+
+  const patch = readGit(cwd, ["diff", "--binary", currentTree, targetTree, "--"])
+  applyGitPatch(cwd, patch)
+  return true
+}
+
+function applyWorkspacePatch(fromCwd: string, toCwd: string) {
+  const patch = createWorkspacePatch(fromCwd)
+  applyGitPatch(toCwd, patch)
+}
+
+function applyGitPatch(cwd: string, patch: string) {
+  if (!patch.trim()) {
+    return
+  }
+
+  const patchDir = mkdtempSync(path.join(os.tmpdir(), "coding-agent-patch-"))
+  const patchFile = path.join(patchDir, "workspace.patch")
+
+  try {
+    writeFileSync(patchFile, patch, "utf8")
+    readGit(cwd, ["apply", "--check", patchFile])
+    readGit(cwd, ["apply", patchFile])
+  } finally {
+    rmSync(patchDir, { force: true, recursive: true })
   }
 }
 

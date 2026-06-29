@@ -10,6 +10,8 @@
   },
   "files": [
     "dist",
+    "coding-agent.config.example.json",
+    "coding-agent.extensions.example.json",
     "README.md",
     "package.json"
   ],

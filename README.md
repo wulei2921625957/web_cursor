@@ -89,6 +89,59 @@ You can also pass `--no-auto-compact`, `--context-max-chars`,
 command line. The web UI disables Cursor's local shell sandbox by default; pass
 `--sandbox enabled` to opt back in.
 
+## Worktrees and Undo
+
+Sessions can run in either Local mode or Worktree mode. Local mode works in the
+opened project directory. Worktree mode creates a managed Git worktree under
+`.session/worktrees` so agent changes stay isolated from your current checkout.
+
+Use the Worktree button to start an isolated session. From an existing session,
+use the workspace action in the header to migrate between Local and Worktree.
+Migration copies the current diff with a Git binary patch and fails instead of
+overwriting conflicting files. Use the Undo action to restore the active
+session workspace to the Git tree captured at the start of the last run.
+
+If a worktree needs ignored local files, add a `.worktreeinclude` file at the
+project root. Exact paths and Git ignore-style patterns are expanded before the
+managed worktree starts. Existing files in the target worktree are not
+overwritten.
+
+```text
+.env
+.env.local
+config/secrets.json
+```
+
+## Extension Runtime
+
+At run time, the app loads project instructions and extensions from the active
+session workspace:
+
+- `AGENTS.override.md` or `AGENTS.md`, from the Git root down to the current
+  workspace directory.
+- Skills from `.agents/skills/*/SKILL.md` along that path and
+  `~/.agents/skills`. Explicit `$skill-name` references load the full skill.
+- Plugin manifests from `.coding-agent/plugins/*/plugin.json` and paths listed
+  in `coding-agent.extensions.json`.
+- MCP servers and lifecycle hooks from `coding-agent.extensions.json` or
+  `.coding-agent/extensions.json`.
+
+Copy `coding-agent.extensions.example.json` to `coding-agent.extensions.json`
+to configure MCP servers, plugin paths, and hooks. MCP servers are passed to the
+Cursor SDK as real MCP configuration, so tools from servers such as Playwright
+or Chrome DevTools can be used by the agent.
+
+Supported hook events are `UserPromptSubmit`, `PreRun`, and `PostRun`. Hooks
+receive a JSON payload on stdin and run in the active session workspace.
+
+## Browser Review
+
+The review panel includes a Browser tab for visual feedback. Open a local or
+public URL, enable annotation mode, click the preview to create coordinate
+markers, and send comments into the current prompt. For automated browser
+control, screenshots, or DevTools inspection, configure a browser MCP server
+such as Playwright in `coding-agent.extensions.json`.
+
 ## Installed command
 
 After installing the package globally or linking it locally, run:
