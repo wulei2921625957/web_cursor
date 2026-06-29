@@ -37,7 +37,6 @@ export const codexAppClientScript = `    const els = {
       openProjectForm: document.getElementById("openProjectForm"),
       pageTitle: document.getElementById("pageTitle"),
       projectList: document.getElementById("projectList"),
-      projectPath: document.getElementById("projectPath"),
       projectToast: document.getElementById("projectToast"),
       prompt: document.getElementById("prompt"),
       reviewCollapseBtn: document.getElementById("reviewCollapseBtn"),
@@ -47,7 +46,6 @@ export const codexAppClientScript = `    const els = {
       scrollBottomBtn: document.getElementById("scrollBottomBtn"),
       sendBtn: document.getElementById("sendBtn"),
       sidePanel: document.getElementById("sidePanel"),
-      useLaunchCwdBtn: document.getElementById("useLaunchCwdBtn"),
     }
 
     let state = {
@@ -332,7 +330,6 @@ export const codexAppClientScript = `    const els = {
         !modelsLoaded ||
         (!activeBusy && !els.prompt.value.trim() && pendingAttachments.length === 0)
       els.openProjectBtn.disabled = busy
-      els.useLaunchCwdBtn.disabled = busy || !state.launchCwd
       els.authSubmitBtn.disabled = authBusy || busy || !els.authApiKey.value.trim()
       updateContextMeter()
     }
@@ -2248,9 +2245,6 @@ export const codexAppClientScript = `    const els = {
       const response = await fetch("/api/status")
       const result = await response.json()
       applyState(result)
-      if (!els.projectPath.value && result.launchCwd) {
-        els.projectPath.placeholder = result.launchCwd
-      }
     }
 
     async function refreshModels() {
@@ -2806,27 +2800,11 @@ export const codexAppClientScript = `    const els = {
       }
     }
 
-    async function openProject(path) {
-      setToast(els.projectToast, "正在打开...")
-      try {
-	        const result = await postJson("/api/projects/open", { cwd: path })
-	        resetStreamingState()
-        clearPendingAttachments()
-	        messagesAutoFollow = true
-	        applyState(result)
-        setToast(els.projectToast, result.message || "项目已打开。")
-        await refreshModels().catch(() => {})
-        await refreshChanges()
-      } catch (error) {
-        setToast(els.projectToast, error.message, true)
-      }
-    }
-
     async function pickProject() {
       setToast(els.projectToast, "请选择项目目录...")
       try {
         const result = await postJson("/api/projects/pick", {
-          initialDirectory: els.projectPath.value.trim() || state.launchCwd || "",
+          initialDirectory: state.launchCwd || "",
         })
 
         if (result.cancelled) {
@@ -2834,11 +2812,7 @@ export const codexAppClientScript = `    const els = {
           return
         }
 
-	        if (result.selectedPath) {
-	          els.projectPath.value = result.selectedPath
-	        }
-
-	        resetStreamingState()
+        resetStreamingState()
         clearPendingAttachments()
 	        messagesAutoFollow = true
 	        applyState(result)
@@ -2964,12 +2938,7 @@ export const codexAppClientScript = `    const els = {
 
     els.openProjectForm.addEventListener("submit", (event) => {
       event.preventDefault()
-      const path = els.projectPath.value.trim()
-      if (!path) {
-        void pickProject()
-        return
-      }
-      void openProject(path)
+      void pickProject()
     })
 
     els.openProjectBtn.addEventListener("click", pickProject)
@@ -2979,13 +2948,6 @@ export const codexAppClientScript = `    const els = {
     els.attachmentInput.addEventListener("change", () => {
       addAttachmentFiles(els.attachmentInput.files)
       els.attachmentInput.value = ""
-    })
-
-    els.useLaunchCwdBtn.addEventListener("click", () => {
-      if (state.launchCwd) {
-        els.projectPath.value = state.launchCwd
-        void openProject(state.launchCwd)
-      }
     })
 
     els.newSessionBtn.addEventListener("click", createNewSession)

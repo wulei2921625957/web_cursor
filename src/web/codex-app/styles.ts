@@ -269,17 +269,9 @@ export const codexAppStyles = `    :root {
       padding: 0 8px 12px;
     }
 
-    .open-project input {
-      height: 34px;
-      padding: 0 10px;
-      font-family: var(--mono);
-      font-size: 12px;
-    }
-
-    .open-project-actions {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
+    .open-project .primary {
+      width: 100%;
+      min-height: 34px;
     }
 
     .primary {

@@ -34,11 +34,7 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 
       <div class="sidebar-heading">打开项目</div>
       <form class="open-project" id="openProjectForm">
-        <input id="projectPath" autocomplete="off" placeholder="可手动输入路径，或点击打开项目选择目录">
-        <div class="open-project-actions">
-          <button class="primary" id="openProjectBtn" type="button">打开项目</button>
-          <button id="useLaunchCwdBtn" type="button">当前目录</button>
-        </div>
+        <button class="primary" id="openProjectBtn" type="button">打开项目</button>
         <div class="toast" id="projectToast"></div>
       </form>
 
