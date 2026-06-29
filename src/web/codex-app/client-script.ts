@@ -42,6 +42,7 @@ export const codexAppClientScript = `    const els = {
       reviewCollapseBtn: document.getElementById("reviewCollapseBtn"),
       reviewResizeHandle: document.getElementById("reviewResizeHandle"),
       reviewToggleBtn: document.getElementById("reviewToggleBtn"),
+      reviewWorkspace: document.getElementById("reviewWorkspace"),
       refreshChangesBtn: document.getElementById("refreshChangesBtn"),
       scrollBottomBtn: document.getElementById("scrollBottomBtn"),
       sendBtn: document.getElementById("sendBtn"),
@@ -2332,6 +2333,7 @@ export const codexAppClientScript = `    const els = {
       const response = await fetch("/api/models")
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || "加载模型失败")
+      console.log("[coding-agent] /api/models", result)
       state = Object.assign({}, state, {
         hasApiKey: state.hasApiKey || Boolean(result.available),
         model: result.currentLabel || state.model,
@@ -2365,7 +2367,7 @@ export const codexAppClientScript = `    const els = {
       if (currentKey && !findModelChoice(modelChoices, currentModel)) {
         const option = document.createElement("option")
         option.value = currentKey
-        option.textContent = state.model && state.model !== "-" ? state.model : currentModel.id
+        option.textContent = currentKey
         option.selected = true
         els.modelSelect.appendChild(option)
       }
@@ -2373,8 +2375,8 @@ export const codexAppClientScript = `    const els = {
       for (const choice of modelChoices) {
         const option = document.createElement("option")
         option.value = modelSelectionKey(choice.value)
-        option.textContent = formatModelOptionLabel(choice)
-        option.title = choice.description || choice.label || ""
+        option.textContent = choice.label || option.value
+        option.title = choice.description || option.textContent
         option.selected = option.value === currentKey
         els.modelSelect.appendChild(option)
       }
@@ -2412,39 +2414,6 @@ export const codexAppClientScript = `    const els = {
       return params ? model.id + "?" + params : model.id
     }
 
-    function contextWindowLabel(choice) {
-      const tokens = Math.max(0, Math.round(Number(choice && choice.contextWindowTokens) || 0))
-      return tokens ? formatTokenCount(tokens) + " ctx" : ""
-    }
-
-    function formatModelChoiceDisplay(choice) {
-      if (!choice) return null
-      const label = String(choice.label || choice.value?.id || "Model")
-      const parts = label.split(" - ")
-      const name = parts[0] || label
-      const detail = cleanModelDetail(parts.slice(1).join(" - ") || selectionDetail(choice.value))
-      return { name, detail }
-    }
-
-    function formatModelOptionLabel(choice) {
-      const display = formatModelChoiceDisplay(choice)
-      if (!display) return ""
-      return [display.name, display.detail, contextWindowLabel(choice)].filter(Boolean).join(" ")
-    }
-
-    function selectionDetail(model) {
-      const params = model && Array.isArray(model.params) ? model.params : []
-      return params.map((param) => String(param.value || "")).filter(Boolean).join(" ")
-    }
-
-    function cleanModelDetail(detail) {
-      return String(detail || "")
-        .split(/[,.]/)
-        .map((part) => part.trim())
-        .filter((part) => part && !/^default$/i.test(part))
-        .join(" · ")
-    }
-
     async function refreshChanges(sessionId) {
       const targetSessionId = sessionId || state.activeSessionId || ""
       const url = targetSessionId
@@ -2475,6 +2444,7 @@ export const codexAppClientScript = `    const els = {
       }
 
       updateChangesFloat(files)
+      els.reviewWorkspace.classList.toggle("has-changes", files.length > 0)
       renderChangesSummary(latestChanges, files)
       renderChangeDiffs(visibleFiles)
       renderChangeTree(visibleFiles)

@@ -116,7 +116,7 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
           <div class="changes-summary" id="changesSummary">请先打开项目。</div>
         </div>
 
-        <div class="review-workspace">
+        <div class="review-workspace" id="reviewWorkspace">
           <section class="diff-review" aria-label="代码 diff">
             <div class="changes-list" id="changesList"></div>
           </section>

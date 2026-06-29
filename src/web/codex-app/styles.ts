@@ -1590,16 +1590,23 @@ export const codexAppStyles = `    :root {
 
     .review-workspace {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 220px;
+      grid-template-columns: minmax(0, 1fr);
       min-width: 0;
       min-height: 0;
+    }
+
+    .review-workspace.has-changes {
+      grid-template-columns: minmax(0, 1fr) 220px;
     }
 
     .diff-review {
       min-width: 0;
       min-height: 0;
-      border-right: 1px solid var(--border);
       overflow: hidden;
+    }
+
+    .review-workspace.has-changes .diff-review {
+      border-right: 1px solid var(--border);
     }
 
     .changes-list {
@@ -1730,11 +1737,15 @@ export const codexAppStyles = `    :root {
     }
 
     .file-review {
-      display: grid;
+      display: none;
       grid-template-rows: auto minmax(0, 1fr);
       min-width: 0;
       min-height: 0;
       background: var(--panel);
+    }
+
+    .review-workspace.has-changes .file-review {
+      display: grid;
     }
 
     .file-review input {

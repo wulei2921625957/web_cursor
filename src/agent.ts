@@ -259,7 +259,7 @@ export class CodingAgentSession {
   async listModels(): Promise<ModelChoice[]> {
     const models = await Cursor.models.list({ apiKey: this.apiKey })
     const choices = disambiguateGlobalDuplicateLabels(
-      dedupeModelChoices(models.map(modelToChoice))
+      dedupeModelChoices(models.flatMap(modelToChoices))
     )
 
     return choices.length > 0
@@ -1936,15 +1936,76 @@ export function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function modelToChoices(model: SDKModel): ModelChoice[] {
+  const variants = [...(model.variants ?? [])]
+  if (variants.length === 0) {
+    return [modelToChoice(model)]
+  }
+
+  variants.sort((left, right) => Number(Boolean(right.isDefault)) - Number(Boolean(left.isDefault)))
+  return variants.map((variant) => modelVariantToChoice(model, variant))
+}
+
 function modelToChoice(model: SDKModel): ModelChoice {
   const context = inferModelContextInfo(model)
   return {
-    label: model.displayName || model.id,
+    label: model.id,
     value: { id: model.id },
     description: model.description,
     contextWindowTokens: context.tokens,
     contextWindowSource: context.source === "unknown" ? undefined : context.source,
   }
+}
+
+function modelVariantToChoice(
+  model: SDKModel,
+  variant: NonNullable<SDKModel["variants"]>[number]
+): ModelChoice {
+  const value: ModelSelection = {
+    id: model.id,
+    ...(variant.params.length > 0
+      ? { params: variant.params.map((param) => ({ ...param })) }
+      : {}),
+  }
+  const context = inferVariantContextInfo(model, variant, value)
+  return {
+    label: modelSelectionKey(value),
+    value,
+    description: variant.description ?? model.description,
+    contextWindowTokens: context.tokens,
+    contextWindowSource: context.source === "unknown" ? undefined : context.source,
+  }
+}
+
+function inferVariantContextInfo(
+  model: SDKModel,
+  variant: NonNullable<SDKModel["variants"]>[number],
+  selection: ModelSelection
+): ModelContextInfo {
+  const contextParam = selection.params?.find((param) => param.id === "context")
+  const contextParamTokens = contextParam
+    ? inferContextTokensFromText([`context ${contextParam.value}`])
+    : 0
+  if (contextParamTokens) {
+    return { source: "catalog", tokens: contextParamTokens }
+  }
+
+  const paramTokens = inferContextTokensFromText(
+    selection.params?.map((param) => `${param.id} ${param.value}`) ?? []
+  )
+  if (paramTokens) {
+    return { source: "description", tokens: paramTokens }
+  }
+
+  const variantTokens = inferContextTokensFromText([
+    variant.displayName,
+    variant.description,
+  ])
+  if (variantTokens) {
+    return { source: "description", tokens: variantTokens }
+  }
+
+  return inferModelContextInfo(model)
 }
 
 function dedupeModelChoices(choices: ModelChoice[]) {
