@@ -70,6 +70,7 @@ export const codexAppClientScript = `    const els = {
     const streamingAssistantQueues = new Map()
     const streamingMultiRuns = new Map()
     const streamingRunTimers = new Map()
+    const streamingThoughts = new Map()
     const persistMessagesTimers = new Map()
     const ASSISTANT_STREAM_FRAME_MS = 32
     const ASSISTANT_STREAM_MAX_CHUNK = 96
@@ -1506,9 +1507,10 @@ export const codexAppClientScript = `    const els = {
       if (activity.items.length === 0 && !activity.elapsedLabel && !activity.summary) return
 
       const groupKey = String(state.activeSessionId || "") + ":" + index
+      const activeProcess = groupHasActiveRunTimer(messages)
       const details = document.createElement("details")
       details.className = "activity-group" + (activity.items.length === 0 ? " empty" : "")
-      details.open = openActivityGroups.has(groupKey)
+      details.open = activeProcess || openActivityGroups.has(groupKey)
       details.addEventListener("toggle", () => {
         if (details.open) {
           openActivityGroups.add(groupKey)
@@ -1555,7 +1557,11 @@ export const codexAppClientScript = `    const els = {
       items.className = "activity-items"
       for (const activityItem of activity.items) {
         const item = document.createElement("div")
-        item.className = "activity-item" + (activityItem.level ? " " + activityItem.level : "")
+        item.className = [
+          "activity-item",
+          activityItem.kind === "thought" ? "thought" : "",
+          activityItem.level || "",
+        ].filter(Boolean).join(" ")
         item.textContent = activityItem.text
         items.appendChild(item)
       }
@@ -1564,6 +1570,11 @@ export const codexAppClientScript = `    const els = {
       if (!showActivityInline && activity.items.length > 0) details.appendChild(processHeader)
       if (activity.items.length > 0) details.appendChild(items)
       els.messages.appendChild(details)
+    }
+
+    function groupHasActiveRunTimer(messages) {
+      const activeTimer = streamingRunTimers.get(state.activeSessionId || "")
+      return Boolean(activeTimer && messages.includes(activeTimer.message))
     }
 
     function createActivityView(messages) {
@@ -1690,6 +1701,16 @@ export const codexAppClientScript = `    const els = {
       if (finishedMatch && activityTextLevel(value) === "normal") return null
 
       if (value === "[思考]") return null
+
+      const thinkingMatch = /^\\[思考\\]\\s*(.+)$/.exec(value)
+      if (thinkingMatch) {
+        return {
+          index,
+          kind: "thought",
+          level: "normal",
+          text: "思考 " + thinkingMatch[1],
+        }
+      }
 
       return {
         index,
@@ -2019,6 +2040,59 @@ export const codexAppClientScript = `    const els = {
       streamingAssistantQueues.delete(sessionId)
     }
 
+    function updateThinking(text, sessionId) {
+      const targetSessionId = sessionId || state.activeSessionId
+      if (!targetSessionId) return
+
+      const delta = String(text || "")
+      if (!delta.trim()) return
+
+      const messages = activeMessages(targetSessionId)
+      let thought = streamingThoughts.get(targetSessionId)
+      if (!thought || messages.indexOf(thought.message) === -1) {
+        thought = {
+          message: { kind: "activity", text: "" },
+          text: "",
+        }
+        streamingThoughts.set(targetSessionId, thought)
+        messages.push(thought.message)
+      }
+
+      thought.text = appendThinkingDelta(thought.text, delta)
+      thought.message.text = "[思考] " + compactActivityText(thought.text)
+      renderMessagesForSession(targetSessionId)
+      schedulePersistMessages(targetSessionId)
+    }
+
+    function appendThinkingDelta(current, delta) {
+      const existing = String(current || "")
+      const value = String(delta || "")
+      if (!value.trim()) return existing
+      if (!existing) return value.trimStart()
+      if (/^\\s/.test(value)) return existing + value
+
+      const trimmed = value.trim()
+      if (/^[,.;:!?，。！？；：）\\]\\}]/.test(trimmed)) {
+        return existing.replace(/\\s+$/g, "") + trimmed
+      }
+      if (/[（\\[\\{(]$/.test(existing.trimEnd())) {
+        return existing.replace(/\\s+$/g, "") + trimmed
+      }
+      return existing.replace(/\\s+$/g, " ") + trimmed
+    }
+
+    function compactActivityText(text) {
+      return String(text || "").replace(/[ \\t\\r\\n]+/g, " ").trim()
+    }
+
+    function finishThinking(sessionId) {
+      if (!sessionId) {
+        streamingThoughts.clear()
+        return
+      }
+      streamingThoughts.delete(sessionId)
+    }
+
 	    function appendAssistant(text, sessionId) {
       const targetSessionId = sessionId || state.activeSessionId
 	      const messages = activeMessages(targetSessionId)
@@ -2127,6 +2201,7 @@ export const codexAppClientScript = `    const els = {
         }
         streamingAssistants.clear()
         streamingMultiRuns.clear()
+        streamingThoughts.clear()
         discardRunTimer()
         return
       }
@@ -2134,6 +2209,7 @@ export const codexAppClientScript = `    const els = {
       clearAssistantQueue(sessionId)
       streamingAssistants.delete(sessionId)
       streamingMultiRuns.delete(sessionId)
+      finishThinking(sessionId)
       discardRunTimer(sessionId)
     }
 
@@ -2198,6 +2274,11 @@ export const codexAppClientScript = `    const els = {
     function renderAgentEvent(event, sessionId) {
       if (event.type === "assistant_delta") {
         appendAssistant(event.text, sessionId)
+        return
+      }
+
+      if (event.type === "thinking") {
+        updateThinking(event.text, sessionId)
         return
       }
 
@@ -2779,10 +2860,11 @@ export const codexAppClientScript = `    const els = {
 	        updateMultiAgentRun(payload.state, sessionId)
 	        return
 	      }
-	      if (payload.type === "error") {
-          flushAssistantQueue(sessionId, true)
-          finishRunTimer(sessionId)
-          setLocalSessionRunning(sessionId, false)
+      if (payload.type === "error") {
+        flushAssistantQueue(sessionId, true)
+        finishRunTimer(sessionId)
+        finishThinking(sessionId)
+        setLocalSessionRunning(sessionId, false)
 	        appendMeta("[错误] " + payload.message, true, sessionId)
         return
       }
@@ -2794,6 +2876,7 @@ export const codexAppClientScript = `    const els = {
       if (payload.type === "finished") {
         flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
+        finishThinking(sessionId)
         setLocalSessionRunning(sessionId, false)
         streamingAssistants.delete(sessionId)
         streamingMultiRuns.delete(sessionId)
@@ -3082,12 +3165,14 @@ export const codexAppClientScript = `    const els = {
 	          prompt: prompt || "请查看附件。",
 	          multiAgent: els.multiAgentMode.checked,
 	        }, (payload) => handleStreamEvent(payload, runSessionId))
-	      } catch (error) {
+      } catch (error) {
         flushAssistantQueue(runSessionId, true)
+        finishThinking(runSessionId)
         appendMeta("[错误] " + error.message, true, runSessionId)
 	      } finally {
         flushAssistantQueue(runSessionId, true)
         finishRunTimer(runSessionId)
+        finishThinking(runSessionId)
         streamingAssistants.delete(runSessionId)
         streamingMultiRuns.delete(runSessionId)
         setLocalSessionRunning(runSessionId, false)

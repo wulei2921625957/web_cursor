@@ -898,6 +898,11 @@ export const codexAppStyles = `    :root {
 	      white-space: pre-wrap;
 	    }
 
+	    .activity-item.thought {
+	      color: var(--faint);
+	      line-height: 1.58;
+	    }
+
 	    .activity-item.warning {
 	      color: var(--warning);
 	    }
