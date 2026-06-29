@@ -90,6 +90,7 @@ export const codexAppClientScript = `    const els = {
     let currentModel = null
     let pendingAttachments = []
     let attachmentIdCounter = 0
+    const USER_ATTACHMENT_MESSAGE_PREFIX = "[[coding-agent-user-message-v1]]"
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
@@ -691,7 +692,11 @@ export const codexAppClientScript = `    const els = {
         )
         if (duplicate) continue
 
-        next.push({ file, id: "attachment-" + ++attachmentIdCounter })
+        next.push({
+          file,
+          id: "attachment-" + ++attachmentIdCounter,
+          previewUrl: isImageAttachment(file) ? URL.createObjectURL(file) : "",
+        })
         totalBytes += file.size
       }
 
@@ -709,37 +714,29 @@ export const codexAppClientScript = `    const els = {
       els.attachmentList.hidden = pendingAttachments.length === 0
 
       for (const item of pendingAttachments) {
-        const chip = document.createElement("div")
-        chip.className = "attachment-chip"
-
-        const name = document.createElement("span")
-        name.className = "attachment-name"
-        name.textContent = item.file.name || "未命名文件"
-        name.title = name.textContent
-
-        const size = document.createElement("span")
-        size.className = "attachment-size"
-        size.textContent = formatFileSize(item.file.size)
-
-        const remove = document.createElement("button")
-        remove.className = "attachment-remove"
-        remove.type = "button"
-        remove.textContent = "×"
-        remove.setAttribute("aria-label", "移除附件 " + name.textContent)
-        remove.addEventListener("click", () => {
-          pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
-          renderAttachmentList()
-          updateControls()
-        })
-
-        chip.appendChild(name)
-        chip.appendChild(size)
-        chip.appendChild(remove)
-        els.attachmentList.appendChild(chip)
+        els.attachmentList.appendChild(
+          createAttachmentPreviewCard(
+            {
+              name: item.file.name || "未命名文件",
+              previewUrl: item.previewUrl,
+              size: item.file.size,
+              type: item.file.type || "",
+            },
+            () => {
+              revokeAttachmentPreview(item)
+              pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
+              renderAttachmentList()
+              updateControls()
+            }
+          )
+        )
       }
     }
 
     function clearPendingAttachments() {
+      for (const item of pendingAttachments) {
+        revokeAttachmentPreview(item)
+      }
       pendingAttachments = []
       if (els.attachmentInput) els.attachmentInput.value = ""
       renderAttachmentList()
@@ -754,6 +751,7 @@ export const codexAppClientScript = `    const els = {
           dataBase64: arrayBufferToBase64(buffer),
           lastModified: item.file.lastModified || 0,
           name: item.file.name || "attachment",
+          previewDataUrl: await createAttachmentPreviewDataUrl(item.file),
           size: item.file.size || buffer.byteLength,
           type: item.file.type || "",
         })
@@ -765,11 +763,121 @@ export const codexAppClientScript = `    const els = {
       const text = prompt.trim()
       if (!attachments || attachments.length === 0) return text
 
-      const lines = attachments.map((item) => {
-        const file = item.file
-        return "- " + (file.name || "attachment") + " (" + formatFileSize(file.size) + ")"
+      return USER_ATTACHMENT_MESSAGE_PREFIX + "\\n" + JSON.stringify({
+        attachments: attachments.map((item) => ({
+          name: item.name || "attachment",
+          previewDataUrl: item.previewDataUrl || "",
+          size: item.size || 0,
+          type: item.type || "",
+        })),
+        text: text || "请查看附件。",
       })
-      return [text || "请查看附件。", "", "附件：", ...lines].join("\\n")
+    }
+
+    function createAttachmentPreviewCard(attachment, onRemove) {
+      const card = document.createElement("div")
+      card.className = "attachment-preview-card"
+
+      const preview = document.createElement("div")
+      preview.className = "attachment-preview"
+      const previewUrl = attachment.previewDataUrl || attachment.previewUrl || ""
+      if (previewUrl) {
+        const image = document.createElement("img")
+        image.alt = attachment.name || "附件"
+        image.src = previewUrl
+        image.addEventListener("error", () => {
+          preview.textContent = ""
+          const fileType = document.createElement("span")
+          fileType.className = "attachment-file-type"
+          fileType.textContent = attachmentFileLabel(attachment.name, attachment.type)
+          preview.appendChild(fileType)
+        })
+        preview.appendChild(image)
+      } else {
+        const fileType = document.createElement("span")
+        fileType.className = "attachment-file-type"
+        fileType.textContent = attachmentFileLabel(attachment.name, attachment.type)
+        preview.appendChild(fileType)
+      }
+
+      const caption = document.createElement("div")
+      caption.className = "attachment-caption"
+      caption.textContent = attachmentCaptionText(attachment)
+      caption.title = caption.textContent
+
+      card.appendChild(preview)
+      card.appendChild(caption)
+
+      if (onRemove) {
+        const remove = document.createElement("button")
+        remove.className = "attachment-preview-remove"
+        remove.type = "button"
+        remove.textContent = "×"
+        remove.setAttribute("aria-label", "移除附件 " + caption.textContent)
+        remove.addEventListener("click", onRemove)
+        card.appendChild(remove)
+      }
+
+      return card
+    }
+
+    function attachmentFileLabel(name, type) {
+      const extension = String(name || "").split(".").pop()
+      if (extension && extension !== name) return extension.slice(0, 4).toUpperCase()
+      if (String(type || "").includes("/")) return String(type).split("/").pop().slice(0, 4).toUpperCase()
+      return "FILE"
+    }
+
+    function attachmentCaptionText(attachment) {
+      const name = attachment.name || "attachment"
+      const sizeText = attachment.size ? formatFileSize(attachment.size) : attachment.sizeLabel
+      return sizeText ? name + " (" + sizeText + ")" : name
+    }
+
+    function isImageAttachment(file) {
+      return String(file && file.type || "").startsWith("image/")
+    }
+
+    function revokeAttachmentPreview(item) {
+      if (item && item.previewUrl) {
+        URL.revokeObjectURL(item.previewUrl)
+      }
+    }
+
+    async function createAttachmentPreviewDataUrl(file) {
+      if (!isImageAttachment(file)) return ""
+
+      return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(file)
+        const image = new Image()
+        image.onload = () => {
+          try {
+            const maxSize = 220
+            const ratio = Math.min(1, maxSize / Math.max(image.naturalWidth || 1, image.naturalHeight || 1))
+            const width = Math.max(1, Math.round((image.naturalWidth || 1) * ratio))
+            const height = Math.max(1, Math.round((image.naturalHeight || 1) * ratio))
+            const canvas = document.createElement("canvas")
+            canvas.width = width
+            canvas.height = height
+            const context = canvas.getContext("2d")
+            if (!context) {
+              resolve("")
+              return
+            }
+            context.drawImage(image, 0, 0, width, height)
+            resolve(canvas.toDataURL("image/jpeg", 0.82))
+          } catch {
+            resolve("")
+          } finally {
+            URL.revokeObjectURL(objectUrl)
+          }
+        }
+        image.onerror = () => {
+          URL.revokeObjectURL(objectUrl)
+          resolve("")
+        }
+        image.src = objectUrl
+      })
     }
 
     function arrayBufferToBase64(buffer) {
@@ -913,28 +1021,32 @@ export const codexAppClientScript = `    const els = {
       body.textContent = parsed.text
       node.appendChild(body)
 
-      const panel = document.createElement("div")
-      panel.className = "user-attachments"
-
-      const title = document.createElement("div")
-      title.className = "user-attachments-title"
-      title.textContent = "附件："
-      panel.appendChild(title)
-
       const list = document.createElement("div")
-      list.className = "user-attachments-list"
+      list.className = "user-attachments"
       for (const attachment of parsed.attachments) {
-        const item = document.createElement("div")
-        item.className = "user-attachment-item"
-        item.textContent = attachment
-        list.appendChild(item)
+        list.appendChild(createAttachmentPreviewCard(withAttachmentPreviewUrl(attachment)))
       }
-      panel.appendChild(list)
-      node.appendChild(panel)
+      node.appendChild(list)
     }
 
     function parseUserAttachmentMessage(text) {
       const value = String(text || "")
+      if (value.startsWith(USER_ATTACHMENT_MESSAGE_PREFIX + "\\n")) {
+        try {
+          const payload = JSON.parse(value.slice(USER_ATTACHMENT_MESSAGE_PREFIX.length + 1))
+          const attachments = Array.isArray(payload.attachments)
+            ? payload.attachments.map(normalizeRenderedAttachment).filter(Boolean)
+            : []
+          if (attachments.length === 0) return null
+          return {
+            attachments,
+            text: compactText(payload.text || "") || "请查看附件。",
+          }
+        } catch {
+          return null
+        }
+      }
+
       const marker = "\\n\\n附件：\\n"
       const markerIndex = value.lastIndexOf(marker)
       if (markerIndex < 0) return null
@@ -945,9 +1057,58 @@ export const codexAppClientScript = `    const els = {
         .split("\\n")
         .map((line) => line.trim())
         .filter(Boolean)
+        .map(parseLegacyAttachmentLine)
 
       if (attachments.length === 0) return null
       return { attachments, text: body || "请查看附件。" }
+    }
+
+    function normalizeRenderedAttachment(value) {
+      if (!value || typeof value !== "object") return null
+      return {
+        name: compactText(value.name || "attachment"),
+        previewDataUrl: String(value.previewDataUrl || ""),
+        size: Number(value.size) || 0,
+        type: String(value.type || ""),
+      }
+    }
+
+    function withAttachmentPreviewUrl(attachment) {
+      if (attachment.previewDataUrl || attachment.previewUrl) return attachment
+      const previewUrl = localAttachmentPreviewUrl(attachment)
+      return previewUrl ? { ...attachment, previewUrl } : attachment
+    }
+
+    function localAttachmentPreviewUrl(attachment) {
+      if (!state.activeSessionId || !isPreviewableImageAttachment(attachment)) {
+        return ""
+      }
+
+      const params = new URLSearchParams()
+      params.set("sessionId", state.activeSessionId)
+      params.set("name", attachment.name || "attachment")
+      if (attachment.size || attachment.sizeLabel) {
+        params.set("v", String(attachment.size || attachment.sizeLabel))
+      }
+      return "/api/attachments/preview?" + params.toString()
+    }
+
+    function isPreviewableImageAttachment(attachment) {
+      const type = String(attachment.type || "").toLowerCase()
+      if (type.startsWith("image/")) return true
+      return /\\.(png|jpe?g|gif|webp|bmp)$/i.test(String(attachment.name || ""))
+    }
+
+    function parseLegacyAttachmentLine(line) {
+      const value = String(line || "").replace(/^[-*]\\s*/, "").trim()
+      const match = /^(.+?)\\s*\\(([^)]+)\\)$/.exec(value)
+      return {
+        name: compactText(match ? match[1] : value) || "attachment",
+        previewDataUrl: "",
+        size: 0,
+        sizeLabel: match ? match[2] : "",
+        type: "",
+      }
     }
 
 	    function appendMultiAgentRun(message) {
@@ -2936,9 +3097,9 @@ export const codexAppClientScript = `    const els = {
       }
 
 	      messagesAutoFollow = true
-	      appendMessage(
+      appendMessage(
         "user",
-        formatUserMessageWithAttachments(prompt, attachmentSnapshot),
+        formatUserMessageWithAttachments(prompt, attachments),
         runSessionId
       )
 	      els.prompt.value = ""

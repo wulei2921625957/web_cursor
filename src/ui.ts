@@ -679,6 +679,31 @@ async function main() {
         return
       }
 
+      if (request.method === "GET" && url.pathname === "/api/attachments/preview") {
+        const sessionId = url.searchParams.get("sessionId")?.trim() ?? ""
+        const name = url.searchParams.get("name")?.trim() ?? ""
+        const target = getRequestedSession(sessionId)
+        const project = target?.project ?? getActiveProject()
+        const previewSessionId = target?.session.id ?? sessionId
+        if (!project || !previewSessionId || !name) {
+          sendJson(response, { error: "附件不存在。" }, 404)
+          return
+        }
+
+        const previewFile = await findSessionAttachmentPreviewFile(
+          project.cwd,
+          previewSessionId,
+          name
+        )
+        if (!previewFile) {
+          sendJson(response, { error: "附件不存在。" }, 404)
+          return
+        }
+
+        await sendAttachmentPreview(response, previewFile.path, previewFile.contentType)
+        return
+      }
+
       if (request.method === "GET" && url.pathname === "/api/models") {
         if (!apiKey) {
           sendJson(response, {
@@ -1533,6 +1558,21 @@ function sendJson(response: ServerResponse, payload: unknown, status = 200) {
   response.end(JSON.stringify(payload))
 }
 
+async function sendAttachmentPreview(
+  response: ServerResponse,
+  filePath: string,
+  contentType: string
+) {
+  const buffer = await fs.readFile(filePath)
+  response.writeHead(200, {
+    "Cache-Control": "no-store",
+    "Content-Length": String(buffer.length),
+    "Content-Type": contentType,
+    "X-Content-Type-Options": "nosniff",
+  })
+  response.end(buffer)
+}
+
 function streamEvents(
   response: ServerResponse,
   handler: (send: (event: unknown) => void) => Promise<void>
@@ -1733,6 +1773,66 @@ async function saveRunAttachments(
   }
 
   return saved
+}
+
+async function findSessionAttachmentPreviewFile(
+  cwd: string,
+  sessionId: string,
+  name: string
+): Promise<{ contentType: string; path: string } | null> {
+  const storedName = sanitizeAttachmentFileName(name)
+  const contentType = attachmentPreviewContentType(storedName)
+  if (!storedName || !contentType) {
+    return null
+  }
+
+  const storage = getProjectStoragePaths(cwd)
+  const uploadDir = path.join(
+    storage.dir,
+    "uploads",
+    sanitizePathSegment(sessionId) || "session"
+  )
+  const entries = await fs.readdir(uploadDir, { withFileTypes: true }).catch(() => [])
+  const candidates = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((fileName) => attachmentStoredFileMatches(fileName, storedName))
+    .sort()
+    .reverse()
+
+  for (const candidate of candidates) {
+    const absolutePath = path.resolve(uploadDir, candidate)
+    const uploadRoot = path.resolve(uploadDir) + path.sep
+    if (!absolutePath.startsWith(uploadRoot)) {
+      continue
+    }
+
+    return { contentType, path: absolutePath }
+  }
+
+  return null
+}
+
+function attachmentStoredFileMatches(fileName: string, storedName: string) {
+  return fileName === storedName || fileName.endsWith("-" + storedName)
+}
+
+function attachmentPreviewContentType(fileName: string) {
+  switch (path.extname(fileName).toLowerCase()) {
+    case ".png":
+      return "image/png"
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg"
+    case ".gif":
+      return "image/gif"
+    case ".webp":
+      return "image/webp"
+    case ".bmp":
+      return "image/bmp"
+    default:
+      return ""
+  }
 }
 
 function decodeAttachmentBase64(input: RunAttachmentInput) {

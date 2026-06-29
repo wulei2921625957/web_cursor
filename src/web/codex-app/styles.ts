@@ -598,30 +598,24 @@ export const codexAppStyles = `    :root {
     }
 
     .user-attachments {
-      display: grid;
-      gap: 6px;
-      min-width: min(260px, 100%);
-      border-radius: 12px;
-      background: color-mix(in srgb, var(--bg) 36%, transparent);
-      padding: 10px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      min-width: min(240px, 100%);
+      padding-top: 2px;
     }
 
-    .user-attachments-title {
-      color: var(--text);
-      font-weight: 760;
-      line-height: 1.35;
+    .message.user .attachment-preview-card {
+      width: 116px;
     }
 
-    .user-attachments-list {
-      display: grid;
-      gap: 3px;
+    .message.user .attachment-preview {
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--panel) 90%, var(--bg));
     }
 
-    .user-attachment-item {
-      color: var(--text);
-      font-weight: 680;
-      line-height: 1.45;
-      overflow-wrap: anywhere;
+    .message.user .attachment-preview-remove {
+      display: none;
     }
 
     .message.assistant {
@@ -1167,56 +1161,88 @@ export const codexAppStyles = `    :root {
     .attachment-list {
       display: flex;
       flex-wrap: wrap;
+      gap: 12px;
+      min-width: 0;
+      padding: 0 2px 2px;
+    }
+
+    .attachment-list .attachment-preview-card {
+      width: 122px;
+    }
+
+    .attachment-list .attachment-caption {
+      display: none;
+    }
+
+    .attachment-preview-card {
+      position: relative;
+      display: grid;
+      width: 126px;
       gap: 6px;
       min-width: 0;
     }
 
-    .attachment-chip {
-      display: inline-flex;
-      max-width: min(100%, 280px);
-      min-height: 28px;
-      align-items: center;
-      gap: 6px;
+    .attachment-preview {
+      display: grid;
+      width: 100%;
+      aspect-ratio: 1;
+      place-items: center;
       border: 1px solid var(--border);
-      border-radius: 999px;
+      border-radius: 18px;
       background: var(--panel-soft);
+      overflow: hidden;
+    }
+
+    .attachment-preview img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #fff;
+      object-fit: contain;
+    }
+
+    .attachment-file-type {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .attachment-caption {
+      min-width: 0;
       color: var(--muted);
       font-size: 12px;
       font-weight: 620;
-      padding: 0 5px 0 10px;
-    }
-
-    .attachment-name {
-      min-width: 0;
+      line-height: 1.25;
       overflow: hidden;
+      text-align: center;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .attachment-size {
-      flex: 0 0 auto;
-      color: var(--faint);
-      font-weight: 560;
-    }
-
-    .attachment-remove {
+    .attachment-preview-remove {
+      position: absolute;
+      top: -8px;
+      right: -8px;
       display: grid;
-      width: 20px;
-      height: 20px;
-      min-height: 20px;
+      width: 30px;
+      height: 30px;
+      min-height: 30px;
       place-items: center;
       border: 0;
       border-radius: 999px;
-      background: transparent;
-      color: var(--faint);
-      font-size: 15px;
+      background: #111;
+      color: #fff;
+      font-size: 22px;
+      font-weight: 360;
       line-height: 1;
       padding: 0;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, .18);
     }
 
-    .attachment-remove:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--danger) 8%, transparent);
-      color: var(--danger);
+    .attachment-preview-remove:hover:not(:disabled) {
+      background: #000;
+      transform: translateY(-1px);
     }
 
     .composer textarea {
