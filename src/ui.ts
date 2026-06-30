@@ -4631,15 +4631,19 @@ function validateWorkspacePath(rawPath: string) {
 function pickWorkspaceDirectory(initialDirectory = "") {
   const initial = getExistingDirectory(initialDirectory) ?? os.homedir()
 
-  try {
-    if (process.platform === "darwin") {
+  if (process.platform === "darwin") {
+    try {
       return pickWorkspaceDirectoryMac(initial)
+    } catch {
+      return null
     }
+  }
 
-    if (process.platform === "win32") {
-      return pickWorkspaceDirectoryWindows(initial)
-    }
+  if (process.platform === "win32") {
+    return pickWorkspaceDirectoryWindows(initial)
+  }
 
+  try {
     return pickWorkspaceDirectoryLinux(initial)
   } catch {
     return null
@@ -4660,36 +4664,48 @@ function pickWorkspaceDirectoryMac(initialDirectory: string) {
 }
 
 function pickWorkspaceDirectoryWindows(initialDirectory: string) {
+  const outputDir = mkdtempSync(path.join(os.tmpdir(), "coding-agent-picker-"))
+  const outputFile = path.join(outputDir, "selected-path.txt")
   const script = [
     "Add-Type -AssemblyName System.Windows.Forms",
     "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
     "$dialog.Description = '选择项目目录'",
     "$dialog.ShowNewFolderButton = $false",
     "if ($env:CODE_AGENT_INITIAL_DIRECTORY -and (Test-Path -LiteralPath $env:CODE_AGENT_INITIAL_DIRECTORY)) { $dialog.SelectedPath = $env:CODE_AGENT_INITIAL_DIRECTORY }",
-    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
+    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllBytes($env:CODE_AGENT_PICKER_OUTPUT, [System.Text.Encoding]::UTF8.GetBytes($dialog.SelectedPath)) }",
   ].join("; ")
   const env = {
     ...process.env,
     CODE_AGENT_INITIAL_DIRECTORY: initialDirectory,
+    CODE_AGENT_PICKER_OUTPUT: outputFile,
   }
   const args = ["-NoProfile", "-STA", "-Command", script]
 
-  let output = ""
   try {
-    output = execFileSync("powershell.exe", args, {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim()
-  } catch {
-    output = execFileSync("pwsh", args, {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim()
-  }
+    try {
+      execFileSync("powershell.exe", args, {
+        env,
+        stdio: ["ignore", "ignore", "ignore"],
+      })
+    } catch {
+      execFileSync("pwsh", args, {
+        env,
+        stdio: ["ignore", "ignore", "ignore"],
+      })
+    }
 
-  return output ? validateWorkspacePath(output) : null
+    const output = readFileSync(outputFile, "utf8").trim()
+
+    return output ? validateWorkspacePath(output) : null
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "ENOENT") {
+      return null
+    }
+
+    throw error
+  } finally {
+    rmSync(outputDir, { force: true, recursive: true })
+  }
 }
 
 function pickWorkspaceDirectoryLinux(initialDirectory: string) {
