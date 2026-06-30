@@ -8,6 +8,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   rmSync,
   statSync,
@@ -231,6 +232,30 @@ const MAX_ATTACHMENT_TEXT_PREVIEW_BYTES = 24 * 1024
 const LEGACY_PROJECT_CONFIG_FILE_NAME = "config.json"
 const PROJECT_CONFIG_FILE_NAME = "coding-agent.config.json"
 const WORKTREE_DIR_NAME = "worktrees"
+const WINDOWS_RESERVED_FILE_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+])
 
 type UserConfig = {
   apiKey?: string
@@ -1007,14 +1032,15 @@ async function main() {
         if (await rebindSessionWorkspace(activeProject, activeSession)) {
           await persistState().catch(() => {})
         }
-        activeSession.changeBaselineTree = createWorkspaceTree(
-          sessionWorkspaceCwd(activeSession)
-        )
         activeSession.changeResultTree = undefined
       } catch (error) {
         send({ type: "error", message: getErrorMessage(error) })
         return
       }
+
+      activeSession.changeBaselineTree = tryCreateWorkspaceTree(
+        sessionWorkspaceCwd(activeSession)
+      )
 
       try {
         const activeCwd = setProcessWorkspaceCwd(sessionWorkspaceCwd(activeSession))
@@ -2716,8 +2742,21 @@ function attachmentKind(name: string, mimeType: string, hasTextPreview: boolean)
 
 function sanitizeAttachmentFileName(name: string) {
   const base = path.basename(name || "attachment")
-  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "")
-  return cleaned || "attachment"
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/[. ]+$/g, "")
+    .replace(/^_+|_+$/g, "")
+
+  if (!cleaned || /^\.+$/.test(cleaned)) {
+    return "attachment"
+  }
+
+  const parsed = path.parse(cleaned)
+  if (WINDOWS_RESERVED_FILE_NAMES.has(parsed.name.toUpperCase())) {
+    return `_${cleaned}`
+  }
+
+  return cleaned
 }
 
 function sanitizePathSegment(value: string) {
@@ -3346,7 +3385,7 @@ function ensureProjectStateSchema(db: Database) {
       updated_at INTEGER NOT NULL,
       agent_state TEXT NOT NULL,
       change_baseline_tree TEXT,
-      change_result_tree TEXT
+      change_result_tree TEXT,
       workspace_json TEXT
     );
 
@@ -3785,12 +3824,32 @@ function optionalString(value: unknown) {
 }
 
 function sameWorkspacePath(left: string, right: string) {
-  return path.resolve(left) === path.resolve(right)
+  return comparableWorkspacePath(left) === comparableWorkspacePath(right)
 }
 
 function isInsidePath(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target))
+  const relative = path.relative(
+    comparableResolvedPath(root),
+    comparableResolvedPath(target)
+  )
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+function comparableWorkspacePath(value: string) {
+  const resolved = path.resolve(value)
+  let canonical = resolved
+  try {
+    canonical = realpathSync.native(resolved)
+  } catch {
+    canonical = resolved
+  }
+
+  return process.platform === "win32" ? canonical.toLowerCase() : canonical
+}
+
+function comparableResolvedPath(value: string) {
+  const resolved = path.resolve(value)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
 }
 
 function dedupeStrings(values: string[]) {
@@ -3898,6 +3957,14 @@ function getWorkspaceChanges(cwd: string): WorkspaceChanges {
 
 function getSessionChanges(cwd: string, session: UiAgentSession): WorkspaceChanges {
   if (!session.changeBaselineTree) {
+    if (!isGitWorkspace(cwd)) {
+      return {
+        available: false,
+        files: [],
+        message: "当前目录不是 Git 仓库，或 Git 不可用，无法显示本次聊天变更。",
+      }
+    }
+
     return {
       available: true,
       files: [],
@@ -3910,6 +3977,15 @@ function getSessionChanges(cwd: string, session: UiAgentSession): WorkspaceChang
     session.changeBaselineTree,
     session.changeResultTree
   )
+}
+
+function isGitWorkspace(cwd: string) {
+  try {
+    readGit(cwd, ["rev-parse", "--is-inside-work-tree"])
+    return true
+  } catch {
+    return false
+  }
 }
 
 function recordSessionChangeResult(cwd: string, session: UiAgentSession) {
@@ -4005,6 +4081,14 @@ function createWorkspaceTree(cwd: string) {
     return readGitWithEnv(cwd, ["write-tree"], env).trim()
   } finally {
     rmSync(indexDir, { force: true, recursive: true })
+  }
+}
+
+function tryCreateWorkspaceTree(cwd: string) {
+  try {
+    return createWorkspaceTree(cwd)
+  } catch {
+    return undefined
   }
 }
 

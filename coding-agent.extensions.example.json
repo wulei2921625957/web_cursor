@@ -10,6 +10,7 @@
     "PreRun": [
       {
         "command": "npm run typecheck",
+        "windowsCommand": "npm run typecheck",
         "timeout": 120,
         "statusMessage": "Running project typecheck before agent work"
       }
@@ -17,6 +18,7 @@
     "PostRun": [
       {
         "command": "git status --short",
+        "windowsCommand": "git status --short",
         "timeout": 30,
         "statusMessage": "Collecting Git status after agent work"
       }

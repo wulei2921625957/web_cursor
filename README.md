@@ -12,6 +12,18 @@ Install dependencies:
 npm install
 ```
 
+### Windows notes
+
+Use a normal Windows desktop shell such as PowerShell or Windows Terminal.
+Node.js 20 or newer is required. `better-sqlite3` uses a native module; if its
+prebuilt package cannot be downloaded for your Node version, `npm install` may
+need Python and Visual Studio Build Tools so `node-gyp` can compile it.
+
+Local chat sessions can run in non-Git directories. The review panel, Undo, and
+Worktree mode require Git for Windows to be installed and available on `PATH`.
+The built-in workspace search uses `ripgrep` when available and falls back to a
+Node.js search implementation when `rg` is not installed.
+
 Start the local web UI:
 
 ```bash
@@ -132,7 +144,9 @@ Cursor SDK as real MCP configuration, so tools from servers such as Playwright
 or Chrome DevTools can be used by the agent.
 
 Supported hook events are `UserPromptSubmit`, `PreRun`, and `PostRun`. Hooks
-receive a JSON payload on stdin and run in the active session workspace.
+receive a JSON payload on stdin and run in the active session workspace. On
+Windows, hooks run through `cmd.exe`; provide `windowsCommand` when a hook's
+normal `command` uses POSIX shell syntax.
 
 ## Browser Review
 

@@ -184,6 +184,7 @@ const WORKSPACE_TOOL_MAX_OUTPUT_CHARS = 20_000
 const WORKSPACE_TOOL_MAX_ENTRIES = 300
 const WORKSPACE_TOOL_SHELL_TIMEOUT_MS = 30_000
 const RUN_STREAM_IDLE_TIMEOUT_MS = 120_000
+const GREP_FALLBACK_MAX_FILE_BYTES = 1_000_000
 
 const ESTIMATED_CHARS_PER_TOKEN = 4
 const MODEL_CONTEXT_USABLE_RATIO = 0.85
@@ -1344,7 +1345,7 @@ function resolveWorkspacePath(root: string, inputPath: string) {
 
 function formatWorkspacePath(root: string, resolvedPath: string) {
   const relative = path.relative(root, resolvedPath)
-  return relative ? relative : "."
+  return relative ? toPortablePath(relative) : "."
 }
 
 function createWorkspaceProjectSnapshot(
@@ -1610,8 +1611,160 @@ function grepWorkspace({
       return []
     }
 
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return grepWorkspaceFallback({
+        glob,
+        ignoreCase,
+        maxMatches,
+        pattern,
+        root,
+        targetPath,
+      })
+    }
+
     throw new Error(`ripgrep failed: ${getChildProcessErrorOutput(error)}`)
   }
+}
+
+function grepWorkspaceFallback({
+  glob,
+  ignoreCase,
+  maxMatches,
+  pattern,
+  root,
+  targetPath,
+}: {
+  glob?: string
+  ignoreCase: boolean
+  maxMatches: number
+  pattern: string
+  root: string
+  targetPath: string
+}) {
+  let matcher: RegExp
+  try {
+    matcher = new RegExp(pattern, ignoreCase ? "i" : "")
+  } catch (error) {
+    throw new Error(`Invalid search pattern: ${getErrorMessage(error)}`)
+  }
+
+  const globMatcher = glob ? createGlobMatcher(glob) : null
+  const files = collectSearchFiles(root, targetPath)
+  const matches: string[] = []
+
+  for (const filePath of files) {
+    if (matches.length >= maxMatches) {
+      break
+    }
+
+    const relativePath = formatWorkspacePath(root, filePath)
+    if (globMatcher && !globMatcher(relativePath)) {
+      continue
+    }
+
+    const stat = safeStat(filePath)
+    if (!stat?.isFile() || stat.size > GREP_FALLBACK_MAX_FILE_BYTES) {
+      continue
+    }
+
+    const buffer = readFileSync(filePath)
+    if (buffer.includes(0)) {
+      continue
+    }
+
+    const lines = buffer.toString("utf8").split(/\r?\n/)
+    for (let index = 0; index < lines.length; index += 1) {
+      if (matches.length >= maxMatches) {
+        break
+      }
+
+      if (matcher.test(lines[index])) {
+        matches.push(`${relativePath}:${index + 1}:${lines[index]}`)
+      }
+    }
+  }
+
+  return matches
+}
+
+function collectSearchFiles(root: string, targetPath: string) {
+  const stat = statSync(targetPath)
+  if (stat.isFile()) {
+    return [targetPath]
+  }
+
+  const files: string[] = []
+  const visit = (directory: string) => {
+    const children = readdirSync(directory, { withFileTypes: true })
+    for (const child of children) {
+      if (shouldSkipWorkspaceEntry(child.name)) {
+        continue
+      }
+
+      const childPath = path.join(directory, child.name)
+      if (child.isDirectory()) {
+        visit(childPath)
+      } else if (child.isFile()) {
+        files.push(childPath)
+      }
+    }
+  }
+
+  if (isInsideWorkspace(root, targetPath)) {
+    visit(targetPath)
+  }
+  return files
+}
+
+function createGlobMatcher(glob: string) {
+  const regex = globToRegExp(glob)
+  return (filePath: string) => regex.test(toPortablePath(filePath))
+}
+
+function globToRegExp(glob: string) {
+  const source = toPortablePath(glob.trim())
+  let pattern = "^"
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]
+    const next = source[index + 1]
+    const afterNext = source[index + 2]
+
+    if (char === "*" && next === "*" && afterNext === "/") {
+      pattern += "(?:.*/)?"
+      index += 2
+      continue
+    }
+
+    if (char === "*" && next === "*") {
+      pattern += ".*"
+      index += 1
+      continue
+    }
+
+    if (char === "*") {
+      pattern += "[^/]*"
+      continue
+    }
+
+    if (char === "?") {
+      pattern += "[^/]"
+      continue
+    }
+
+    pattern += escapeRegExp(char)
+  }
+
+  return new RegExp(`${pattern}$`)
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
+}
+
+function isInsideWorkspace(root: string, target: string) {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 function runWorkspaceShell(
@@ -1621,8 +1774,14 @@ function runWorkspaceShell(
   timeoutMs: number,
   maxOutputBytes: number
 ) {
+  const shell = process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : "sh"
+  const shellArgs =
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", command]
+      : ["-lc", command]
+
   try {
-    const stdout = execFileSync("sh", ["-lc", command], {
+    const stdout = execFileSync(shell, shellArgs, {
       cwd: workingDirectory,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -1652,6 +1811,10 @@ function runWorkspaceShell(
       truncated: stdout.length > maxOutputBytes || stderr.length > maxOutputBytes,
     }
   }
+}
+
+function toPortablePath(value: string) {
+  return value.replace(/\\/g, "/")
 }
 
 function getChildProcessErrorOutput(error: unknown) {

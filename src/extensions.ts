@@ -24,12 +24,13 @@ export type ExtensionSource = {
 }
 
 export type HookDefinition = {
-  command: string
+  command?: string
   event: HookEvent
   matcher?: string
   source: string
   statusMessage?: string
   timeoutMs: number
+  windowsCommand?: string
 }
 
 export type HookEvent = "PostRun" | "PreRun" | "UserPromptSubmit"
@@ -97,7 +98,9 @@ export function runHooks(
   cwd: string,
   onStatus?: (message: string) => void
 ) {
-  const matching = hooks.filter((hook) => hook.event === event)
+  const matching = hooks.filter(
+    (hook) => hook.event === event && hookCommandForCurrentPlatform(hook)
+  )
   for (const hook of matching) {
     if (hook.statusMessage) {
       onStatus?.(hook.statusMessage)
@@ -349,14 +352,18 @@ function normalizeHookCommand(
 
   const record = raw as Record<string, unknown>
   const command = typeof record.command === "string" ? record.command.trim() : ""
-  if (!command) {
-    warnings.push(`Ignoring ${event} hook without command from ${source}.`)
+  const windowsCommand =
+    typeof record.windowsCommand === "string" ? record.windowsCommand.trim() : ""
+  if (!command && !windowsCommand) {
+    warnings.push(
+      `Ignoring ${event} hook without command or windowsCommand from ${source}.`
+    )
     return []
   }
 
   return [
     {
-      command,
+      command: command || undefined,
       event,
       matcher:
         typeof record.matcher === "string"
@@ -368,6 +375,7 @@ function normalizeHookCommand(
       statusMessage:
         typeof record.statusMessage === "string" ? record.statusMessage : undefined,
       timeoutMs: normalizeHookTimeout(record.timeout),
+      windowsCommand: windowsCommand || undefined,
     },
   ]
 }
@@ -386,8 +394,13 @@ function runHookCommand(
   cwd: string
 ) {
   const input = JSON.stringify(payload)
+  const command = hookCommandForCurrentPlatform(hook)
+  if (!command) {
+    return
+  }
+
   if (process.platform === "win32") {
-    execFileSync("cmd.exe", ["/d", "/s", "/c", hook.command], {
+    execFileSync("cmd.exe", ["/d", "/s", "/c", command], {
       cwd,
       encoding: "utf8",
       input,
@@ -397,13 +410,19 @@ function runHookCommand(
     return
   }
 
-  execFileSync("sh", ["-lc", hook.command], {
+  execFileSync("sh", ["-lc", command], {
     cwd,
     encoding: "utf8",
     input,
     stdio: ["pipe", "pipe", "pipe"],
     timeout: hook.timeoutMs,
   })
+}
+
+function hookCommandForCurrentPlatform(hook: HookDefinition) {
+  return process.platform === "win32"
+    ? hook.windowsCommand ?? hook.command
+    : hook.command
 }
 
 function renderRuntimeInstructions({
