@@ -26,6 +26,9 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "prepack": "npm run build",
     "start": "node dist/ui.js",
+    "test": "npm run test:unit",
+    "test:integration": "tsx --test test/**/*.test.ts",
+    "test:unit": "tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

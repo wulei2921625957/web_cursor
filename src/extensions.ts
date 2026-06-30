@@ -8,10 +8,17 @@ import {
 import os from "node:os"
 import path from "node:path"
 import type { McpServerConfig } from "@cursor/sdk"
+import {
+  appendPermissionAuditLog,
+  evaluateShellPermission,
+  readShellPermissionRules,
+  type LocalSandboxOptions,
+} from "./permissions.js"
 
 export type ExtensionRuntime = {
   hooks: HookDefinition[]
   instructions: string
+  mcpPolicies: McpToolPolicy[]
   mcpServers: Record<string, McpServerConfig>
   sources: ExtensionSource[]
   warnings: string[]
@@ -21,6 +28,25 @@ export type ExtensionSource = {
   kind: "agents" | "skill" | "plugin" | "mcp" | "hook"
   label: string
   path?: string
+}
+
+export type ExtensionInventory = {
+  configPath: string
+  hooks: ExtensionInventoryItem[]
+  mcpServers: ExtensionInventoryItem[]
+  plugins: ExtensionInventoryItem[]
+  skills: ExtensionInventoryItem[]
+  warnings: string[]
+}
+
+export type ExtensionInventoryItem = {
+  description?: string
+  displayName?: string
+  enabled: boolean
+  label: string
+  path?: string
+  policySummary?: string
+  source?: string
 }
 
 export type HookDefinition = {
@@ -35,6 +61,17 @@ export type HookDefinition = {
 
 export type HookEvent = "PostRun" | "PreRun" | "UserPromptSubmit"
 
+export type McpToolPolicyMode = "allow" | "deny" | "prompt"
+
+export type McpToolPolicy = {
+  allow: string[]
+  defaultMode?: McpToolPolicyMode
+  deny: string[]
+  prompt: string[]
+  server: string
+  serverDenied: boolean
+}
+
 type SkillDefinition = {
   description: string
   name: string
@@ -42,7 +79,12 @@ type SkillDefinition = {
 }
 
 type ExtensionConfig = {
+  disabledHooks?: unknown
+  disabledMcpServers?: unknown
+  disabledPlugins?: unknown
+  disabledSkills?: unknown
   hooks?: unknown
+  mcpPolicies?: unknown
   mcpServers?: unknown
   plugins?: unknown
 }
@@ -57,13 +99,30 @@ export function loadExtensionRuntime(cwd: string, prompt: string): ExtensionRunt
   const warnings: string[] = []
   const sources: ExtensionSource[] = []
   const config = loadExtensionConfig(root, warnings)
+  const disabled = normalizeExtensionDisabled(config)
   const projectInstructions = loadProjectInstructions(cwd, sources, warnings)
-  const skills = discoverSkills(cwd, sources, warnings)
+  const skills = discoverSkills(cwd, sources, warnings, disabled.skills)
   const activeSkills = selectActiveSkills(skills, prompt)
-  const pluginRuntime = loadPlugins(root, config, sources, warnings)
+  const pluginRuntime = loadPlugins(root, config, sources, warnings, disabled.plugins)
   const mcpServers = {
     ...pluginRuntime.mcpServers,
     ...normalizeMcpServers(config.mcpServers, warnings),
+  }
+  const mcpPolicies = normalizeMcpPolicies(config.mcpPolicies, warnings)
+  for (const name of disabled.mcpServers) {
+    delete mcpServers[name]
+  }
+  for (const policy of mcpPolicies) {
+    if (policy.serverDenied) {
+      delete mcpServers[policy.server]
+      warnings.push(`MCP server ${policy.server} disabled by mcpPolicies.`)
+      continue
+    }
+    if (mcpPolicyRequiresPrompt(policy) && mcpServers[policy.server]) {
+      warnings.push(
+        `MCP policy for ${policy.server} uses prompt; SDK tool-call approvals are enforced through runtime instructions.`
+      )
+    }
   }
   for (const name of Object.keys(mcpServers)) {
     sources.push({ kind: "mcp", label: name })
@@ -72,7 +131,7 @@ export function loadExtensionRuntime(cwd: string, prompt: string): ExtensionRunt
   const hooks = [
     ...pluginRuntime.hooks,
     ...normalizeHooks(config.hooks, "project extension config", warnings),
-  ]
+  ].filter((hook) => !isHookDisabled(hook, disabled.hooks))
   for (const hook of hooks) {
     sources.push({ kind: "hook", label: hook.event, path: hook.source })
   }
@@ -81,12 +140,72 @@ export function loadExtensionRuntime(cwd: string, prompt: string): ExtensionRunt
     hooks,
     instructions: renderRuntimeInstructions({
       activeSkills,
+      mcpPolicies: mcpPolicies.filter((policy) => mcpServers[policy.server]),
       projectInstructions,
       skills,
       warnings,
     }),
+    mcpPolicies,
     mcpServers,
     sources,
+    warnings,
+  }
+}
+
+export function getExtensionInventory(cwd: string): ExtensionInventory {
+  const root = findGitRoot(cwd) ?? path.resolve(cwd)
+  const warnings: string[] = []
+  const config = loadExtensionConfig(root, warnings)
+  const disabled = normalizeExtensionDisabled(config)
+  const allSkills = discoverSkills(cwd, [], warnings, new Set())
+  const plugins = discoverPluginDefinitions(root, config, warnings)
+  const enabledPlugins = plugins.filter((plugin) => !disabled.plugins.has(plugin.id))
+  const pluginRuntime = loadPlugins(root, config, [], warnings, disabled.plugins)
+  const mcpServers = {
+    ...pluginRuntime.mcpServers,
+    ...normalizeMcpServers(config.mcpServers, warnings),
+  }
+  const mcpPolicies = normalizeMcpPolicies(config.mcpPolicies, warnings)
+  const policyByServer = new Map(mcpPolicies.map((policy) => [policy.server, policy]))
+  const hooks = [
+    ...pluginRuntime.hooks,
+    ...normalizeHooks(config.hooks, "project extension config", warnings),
+  ]
+
+  return {
+    configPath: path.join(root, ".coding-agent", "extensions.json"),
+    hooks: hooks.map((hook) => ({
+      description: hook.event,
+      displayName: hook.event,
+      enabled: !isHookDisabled(hook, disabled.hooks),
+      label: hookIdentity(hook),
+      path: hook.source,
+      source: hookCommandForCurrentPlatform(hook),
+    })),
+    mcpServers: Object.keys(mcpServers)
+      .sort((left, right) => left.localeCompare(right))
+      .map((name) => ({
+        enabled:
+          !disabled.mcpServers.has(name) && !policyByServer.get(name)?.serverDenied,
+        label: name,
+        policySummary: renderMcpPolicySummary(policyByServer.get(name)),
+        source: enabledPlugins.some((plugin) => plugin.mcpServers.includes(name))
+          ? "plugin"
+          : "config",
+      })),
+    plugins: plugins.map((plugin) => ({
+      description: plugin.description,
+      enabled: !disabled.plugins.has(plugin.id),
+      label: plugin.id,
+      path: plugin.manifestFile,
+      source: renderPluginInventorySource(plugin),
+    })),
+    skills: allSkills.map((skill) => ({
+      description: skill.description,
+      enabled: !disabled.skills.has(skill.name),
+      label: skill.name,
+      path: skill.path,
+    })),
     warnings,
   }
 }
@@ -96,7 +215,8 @@ export function runHooks(
   event: HookEvent,
   payload: Record<string, unknown>,
   cwd: string,
-  onStatus?: (message: string) => void
+  onStatus?: (message: string) => void,
+  sandboxOptions?: LocalSandboxOptions
 ) {
   const matching = hooks.filter(
     (hook) => hook.event === event && hookCommandForCurrentPlatform(hook)
@@ -104,6 +224,31 @@ export function runHooks(
   for (const hook of matching) {
     if (hook.statusMessage) {
       onStatus?.(hook.statusMessage)
+    }
+    const command = hookCommandForCurrentPlatform(hook)
+    if (!command) {
+      continue
+    }
+    const permission = evaluateShellPermission({
+      command,
+      cwd,
+      permissions: sandboxOptions,
+      rules: readShellPermissionRules(cwd),
+      source: `hook:${event}`,
+      workspaceRoot: cwd,
+    })
+    appendPermissionAuditLog(cwd, {
+      command,
+      cwd,
+      decision: permission.decision,
+      event: `hook:${event}`,
+      permissionMode: permission.permissionMode,
+      reason: permission.reason,
+      risk: permission.risk,
+      source: hook.source,
+    })
+    if (!permission.allowed) {
+      throw new Error(permission.message)
     }
     runHookCommand(hook, payload, cwd)
   }
@@ -161,7 +306,8 @@ function discoverAgentInstructionFiles(cwd: string) {
 function discoverSkills(
   cwd: string,
   sources: ExtensionSource[],
-  warnings: string[]
+  warnings: string[],
+  disabledSkills: Set<string>
 ) {
   const roots = discoverSkillRoots(cwd)
   const skills: SkillDefinition[] = []
@@ -177,12 +323,16 @@ function discoverSkills(
       const skill = parseSkill(skillFile, warnings)
       if (skill) {
         skills.push(skill)
-        sources.push({ kind: "skill", label: skill.name, path: skill.path })
+        if (!disabledSkills.has(skill.name)) {
+          sources.push({ kind: "skill", label: skill.name, path: skill.path })
+        }
       }
     }
   }
 
-  return skills.sort((left, right) => left.name.localeCompare(right.name))
+  return skills
+    .filter((skill) => !disabledSkills.has(skill.name))
+    .sort((left, right) => left.name.localeCompare(right.name))
 }
 
 function discoverSkillRoots(cwd: string) {
@@ -211,28 +361,75 @@ function selectActiveSkills(skills: SkillDefinition[], prompt: string) {
   const requested = new Set(
     Array.from(prompt.matchAll(/\$([A-Za-z0-9_-]+)/g), (match) => match[1])
   )
-  return skills.filter((skill) => requested.has(skill.name))
+  return skills.filter(
+    (skill) => requested.has(skill.name) || implicitSkillMatch(skill, prompt)
+  )
 }
 
-function loadPlugins(
+function implicitSkillMatch(skill: SkillDefinition, prompt: string) {
+  const normalizedPrompt = normalizeSkillText(prompt)
+  if (!normalizedPrompt) {
+    return false
+  }
+
+  const name = normalizeSkillText(skill.name)
+  if (name && normalizedPrompt.includes(name)) {
+    return true
+  }
+
+  const terms = new Set(
+    normalizeSkillText(`${skill.name} ${skill.description}`)
+      .split(/\s+/)
+      .filter((term) => term.length >= 5)
+  )
+  let matches = 0
+  for (const term of terms) {
+    if (normalizedPrompt.includes(term)) {
+      matches += 1
+    }
+    if (matches >= 2) {
+      return true
+    }
+  }
+  return false
+}
+
+function normalizeSkillText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+type PluginDefinition = {
+  dependencies: string[]
+  description: string
+  id: string
+  manifestFile: string
+  mcpServers: string[]
+  version: string
+}
+
+function discoverPluginDefinitions(
   root: string,
   config: ExtensionConfig,
-  sources: ExtensionSource[],
   warnings: string[]
 ) {
   const pluginDirs = [
     ...normalizeStringList(config.plugins),
     ...listDirectories(path.join(root, ".coding-agent", "plugins")),
   ]
-  const hooks: HookDefinition[] = []
-  const mcpServers: Record<string, McpServerConfig> = {}
+  const plugins: PluginDefinition[] = []
+  const seen = new Set<string>()
 
   for (const rawDir of pluginDirs) {
     const dir = path.resolve(root, rawDir)
-    const manifestFile = path.join(dir, "plugin.json")
-    if (!isReadableFile(manifestFile)) {
+    const manifestFile = findPluginManifest(dir)
+    if (!manifestFile || seen.has(manifestFile)) {
       continue
     }
+    seen.add(manifestFile)
 
     try {
       const manifest = JSON.parse(readFileSync(manifestFile, "utf8")) as Record<
@@ -243,11 +440,91 @@ function loadPlugins(
         typeof manifest.id === "string" && manifest.id.trim()
           ? manifest.id.trim()
           : path.basename(dir)
-      sources.push({ kind: "plugin", label: id, path: manifestFile })
-      Object.assign(mcpServers, normalizeMcpServers(manifest.mcpServers, warnings))
-      hooks.push(...normalizeHooks(manifest.hooks, `plugin ${id}`, warnings))
+      const description =
+        typeof manifest.description === "string" ? manifest.description.trim() : ""
+      const version = typeof manifest.version === "string" ? manifest.version.trim() : ""
+      plugins.push({
+        dependencies: normalizePluginDependencies(manifest.dependencies),
+        description,
+        id,
+        manifestFile,
+        mcpServers: Object.keys(normalizeMcpServers(manifest.mcpServers, warnings)),
+        version,
+      })
     } catch (error) {
       warnings.push(`Failed to load plugin ${manifestFile}: ${getErrorMessage(error)}`)
+    }
+  }
+
+  return plugins.sort((left, right) => left.id.localeCompare(right.id))
+}
+
+function normalizePluginDependencies(value: unknown) {
+  if (Array.isArray(value)) {
+    return sortUnique(value.map((item) => String(item || "")))
+  }
+  if (!value || typeof value !== "object") {
+    return []
+  }
+
+  return sortUnique(
+    Object.entries(value).map(([name, version]) => {
+      const trimmed = name.trim()
+      return typeof version === "string" && version.trim()
+        ? `${trimmed}@${version.trim()}`
+        : trimmed
+    })
+  )
+}
+
+function renderPluginInventorySource(plugin: PluginDefinition) {
+  return [
+    plugin.version ? `v${plugin.version}` : "",
+    plugin.mcpServers.length > 0 ? `MCP ${plugin.mcpServers.length}` : "",
+    plugin.dependencies.length > 0
+      ? `deps ${plugin.dependencies.slice(0, 3).join(", ")}${
+          plugin.dependencies.length > 3 ? ", ..." : ""
+        }`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+function findPluginManifest(pluginDir: string) {
+  const candidates = [
+    path.join(pluginDir, "plugin.json"),
+    path.join(pluginDir, ".codex-plugin", "plugin.json"),
+  ]
+  return candidates.find(isReadableFile) ?? ""
+}
+
+function loadPlugins(
+  root: string,
+  config: ExtensionConfig,
+  sources: ExtensionSource[],
+  warnings: string[],
+  disabledPlugins: Set<string>
+) {
+  const plugins = discoverPluginDefinitions(root, config, warnings)
+  const hooks: HookDefinition[] = []
+  const mcpServers: Record<string, McpServerConfig> = {}
+
+  for (const plugin of plugins) {
+    if (disabledPlugins.has(plugin.id)) {
+      continue
+    }
+
+    try {
+      const manifest = JSON.parse(readFileSync(plugin.manifestFile, "utf8")) as Record<
+        string,
+        unknown
+      >
+      sources.push({ kind: "plugin", label: plugin.id, path: plugin.manifestFile })
+      Object.assign(mcpServers, normalizeMcpServers(manifest.mcpServers, warnings))
+      hooks.push(...normalizeHooks(manifest.hooks, `plugin ${plugin.id}`, warnings))
+    } catch (error) {
+      warnings.push(`Failed to load plugin ${plugin.manifestFile}: ${getErrorMessage(error)}`)
     }
   }
 
@@ -286,6 +563,165 @@ function normalizeMcpServers(value: unknown, warnings: string[]) {
     servers[name] = config as McpServerConfig
   }
   return servers
+}
+
+function normalizeExtensionDisabled(config: ExtensionConfig) {
+  return {
+    hooks: new Set(normalizeStringList(config.disabledHooks)),
+    mcpServers: new Set(normalizeStringList(config.disabledMcpServers)),
+    plugins: new Set(normalizeStringList(config.disabledPlugins)),
+    skills: new Set(normalizeStringList(config.disabledSkills)),
+  }
+}
+
+function isHookDisabled(hook: HookDefinition, disabledHooks: Set<string>) {
+  return disabledHooks.has(hookIdentity(hook)) || disabledHooks.has(hook.event)
+}
+
+function hookIdentity(hook: HookDefinition) {
+  return [
+    hook.event,
+    hook.source,
+    hook.command ?? "",
+    hook.windowsCommand ?? "",
+  ].join("|")
+}
+
+function normalizeMcpPolicies(value: unknown, warnings: string[]) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [] as McpToolPolicy[]
+  }
+
+  const policies: McpToolPolicy[] = []
+  for (const [server, rawPolicy] of Object.entries(value)) {
+    if (!server.trim()) {
+      warnings.push("Ignoring MCP policy with empty server name.")
+      continue
+    }
+
+    const policy = normalizeMcpPolicy(server.trim(), rawPolicy, warnings)
+    if (policy) {
+      policies.push(policy)
+    }
+  }
+  return policies.sort((left, right) => left.server.localeCompare(right.server))
+}
+
+function normalizeMcpPolicy(
+  server: string,
+  rawPolicy: unknown,
+  warnings: string[]
+): McpToolPolicy | null {
+  if (rawPolicy === "deny") {
+    return emptyMcpPolicy(server, true)
+  }
+  if (rawPolicy === "allow" || rawPolicy === "prompt") {
+    return { ...emptyMcpPolicy(server, false), defaultMode: rawPolicy }
+  }
+  if (!rawPolicy || typeof rawPolicy !== "object" || Array.isArray(rawPolicy)) {
+    warnings.push(`Ignoring invalid MCP policy for ${server}.`)
+    return null
+  }
+
+  const record = rawPolicy as Record<string, unknown>
+  const mode = normalizeMcpPolicyMode(record.mode)
+  if (mode === "deny") {
+    return emptyMcpPolicy(server, true)
+  }
+
+  const policy = {
+    ...emptyMcpPolicy(server, false),
+    defaultMode:
+      normalizeMcpPolicyMode(record.defaultMode) ??
+      normalizeMcpPolicyMode(record.default),
+  }
+
+  addToolsToMcpPolicy(policy, "allow", record.allow)
+  addToolsToMcpPolicy(policy, "deny", record.deny)
+  addToolsToMcpPolicy(policy, "prompt", record.prompt)
+  addMcpToolsMapToPolicy(policy, record.tools, warnings)
+
+  if (!policy.defaultMode && policy.allow.length > 0) {
+    policy.defaultMode = "deny"
+  } else if (!policy.defaultMode && mode) {
+    policy.defaultMode = mode
+  }
+
+  policy.allow = sortUnique(policy.allow)
+  policy.deny = sortUnique(policy.deny)
+  policy.prompt = sortUnique(policy.prompt)
+  return policy
+}
+
+function emptyMcpPolicy(server: string, serverDenied: boolean): McpToolPolicy {
+  return {
+    allow: [],
+    deny: [],
+    prompt: [],
+    server,
+    serverDenied,
+  }
+}
+
+function addToolsToMcpPolicy(
+  policy: McpToolPolicy,
+  mode: McpToolPolicyMode,
+  value: unknown
+) {
+  policy[mode].push(...normalizeStringList(value))
+}
+
+function addMcpToolsMapToPolicy(
+  policy: McpToolPolicy,
+  value: unknown,
+  warnings: string[]
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return
+  }
+
+  for (const [tool, rawMode] of Object.entries(value)) {
+    const name = tool.trim()
+    const mode = normalizeMcpPolicyMode(rawMode)
+    if (!name || !mode) {
+      warnings.push(`Ignoring invalid MCP tool policy for ${policy.server}.${tool}.`)
+      continue
+    }
+    policy[mode].push(name)
+  }
+}
+
+function normalizeMcpPolicyMode(value: unknown): McpToolPolicyMode | undefined {
+  return value === "allow" || value === "deny" || value === "prompt"
+    ? value
+    : undefined
+}
+
+function mcpPolicyRequiresPrompt(policy: McpToolPolicy) {
+  return policy.defaultMode === "prompt" || policy.prompt.length > 0
+}
+
+function renderMcpPolicySummary(policy?: McpToolPolicy) {
+  if (!policy) {
+    return undefined
+  }
+  if (policy.serverDenied) {
+    return "策略：server deny"
+  }
+
+  const parts = [
+    policy.allow.length > 0 ? `allow ${policy.allow.length}` : "",
+    policy.prompt.length > 0 ? `prompt ${policy.prompt.length}` : "",
+    policy.deny.length > 0 ? `deny ${policy.deny.length}` : "",
+    policy.defaultMode ? `default ${policy.defaultMode}` : "",
+  ].filter(Boolean)
+  return parts.length > 0 ? `策略：${parts.join(" / ")}` : undefined
+}
+
+function sortUnique(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(
+    (left, right) => left.localeCompare(right)
+  )
 }
 
 function normalizeHooks(
@@ -427,11 +863,13 @@ function hookCommandForCurrentPlatform(hook: HookDefinition) {
 
 function renderRuntimeInstructions({
   activeSkills,
+  mcpPolicies,
   projectInstructions,
   skills,
   warnings,
 }: {
   activeSkills: SkillDefinition[]
+  mcpPolicies: McpToolPolicy[]
   projectInstructions: string
   skills: SkillDefinition[]
   warnings: string[]
@@ -457,11 +895,36 @@ function renderRuntimeInstructions({
     }
   }
 
+  const mcpPolicyInstructions = renderMcpPolicyInstructions(mcpPolicies)
+  if (mcpPolicyInstructions) {
+    parts.push(
+      "MCP tool policies:",
+      mcpPolicyInstructions,
+      "Treat denied MCP tools as unavailable. For prompt MCP tools, ask the user for explicit confirmation before using them. Apply default policies to tools not listed by name."
+    )
+  }
+
   if (warnings.length > 0) {
     parts.push("Extension warnings:", warnings.join("\n"))
   }
 
   return parts.join("\n\n")
+}
+
+function renderMcpPolicyInstructions(policies: McpToolPolicy[]) {
+  const lines: string[] = []
+  for (const policy of policies) {
+    const parts = [
+      policy.allow.length > 0 ? `allow: ${policy.allow.join(", ")}` : "",
+      policy.prompt.length > 0 ? `prompt: ${policy.prompt.join(", ")}` : "",
+      policy.deny.length > 0 ? `deny: ${policy.deny.join(", ")}` : "",
+      policy.defaultMode ? `default: ${policy.defaultMode}` : "",
+    ].filter(Boolean)
+    if (parts.length > 0) {
+      lines.push(`- ${policy.server}: ${parts.join("; ")}`)
+    }
+  }
+  return lines.join("\n")
 }
 
 function renderSkillList(skills: SkillDefinition[]) {

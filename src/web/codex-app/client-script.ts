@@ -1,5 +1,12 @@
 export const codexAppClientScript = `    const els = {
       appShell: document.querySelector(".app-shell"),
+      artifactForm: document.getElementById("artifactForm"),
+      artifactPath: document.getElementById("artifactPath"),
+      artifactPreview: document.getElementById("artifactPreview"),
+      artifactPreviewBtn: document.getElementById("artifactPreviewBtn"),
+      artifactsTab: document.getElementById("artifactsTab"),
+      artifactsWorkspace: document.getElementById("artifactsWorkspace"),
+      approvalPanel: document.getElementById("approvalPanel"),
       attachmentBtn: document.getElementById("attachmentBtn"),
       attachmentInput: document.getElementById("attachmentInput"),
       attachmentList: document.getElementById("attachmentList"),
@@ -11,6 +18,18 @@ export const codexAppClientScript = `    const els = {
       authStatus: document.getElementById("authStatus"),
       authSubmitBtn: document.getElementById("authSubmitBtn"),
       authToast: document.getElementById("authToast"),
+      automationCreateBtn: document.getElementById("automationCreateBtn"),
+      automationCron: document.getElementById("automationCron"),
+      automationForm: document.getElementById("automationForm"),
+      automationInterval: document.getElementById("automationInterval"),
+      automationPermission: document.getElementById("automationPermission"),
+      automationPrompt: document.getElementById("automationPrompt"),
+      automationScheduleMode: document.getElementById("automationScheduleMode"),
+      automationSchedulePreview: document.getElementById("automationSchedulePreview"),
+      automationsList: document.getElementById("automationsList"),
+      automationsTab: document.getElementById("automationsTab"),
+      automationTitle: document.getElementById("automationTitle"),
+      automationsWorkspace: document.getElementById("automationsWorkspace"),
       browserAnnotateBtn: document.getElementById("browserAnnotateBtn"),
       browserComments: document.getElementById("browserComments"),
       browserFeedback: document.getElementById("browserFeedback"),
@@ -18,6 +37,9 @@ export const codexAppClientScript = `    const els = {
       browserFeedbackForm: document.getElementById("browserFeedbackForm"),
       browserFrame: document.getElementById("browserFrame"),
       browserForm: document.getElementById("browserForm"),
+      browserInspectBtn: document.getElementById("browserInspectBtn"),
+      browserInspection: document.getElementById("browserInspection"),
+      browserMcpBtn: document.getElementById("browserMcpBtn"),
       browserOpenBtn: document.getElementById("browserOpenBtn"),
       browserOverlay: document.getElementById("browserOverlay"),
       browserStage: document.getElementById("browserStage"),
@@ -34,6 +56,7 @@ export const codexAppClientScript = `    const els = {
       changesTab: document.getElementById("changesTab"),
       changeTree: document.getElementById("changeTree"),
       composer: document.getElementById("composer"),
+      composerWrap: document.querySelector(".composer-wrap"),
       conversation: document.getElementById("conversation"),
       contextMeter: document.getElementById("contextMeter"),
       contextMeterText: document.getElementById("contextMeterText"),
@@ -42,7 +65,30 @@ export const codexAppClientScript = `    const els = {
       contextPopoverTokens: document.getElementById("contextPopoverTokens"),
       cwd: document.getElementById("cwd"),
       discardSessionBtn: document.getElementById("discardSessionBtn"),
+      extensionsConfigPath: document.getElementById("extensionsConfigPath"),
+      extensionsList: document.getElementById("extensionsList"),
+      extensionsRefreshBtn: document.getElementById("extensionsRefreshBtn"),
+      extensionsTab: document.getElementById("extensionsTab"),
+      extensionsWorkspace: document.getElementById("extensionsWorkspace"),
       main: document.getElementById("main"),
+      memoryActions: document.querySelector(".memory-actions"),
+      memoryClearBtn: document.getElementById("memoryClearBtn"),
+      memoryEditor: document.getElementById("memoryEditor"),
+      memoryEnabled: document.getElementById("memoryEnabled"),
+      memoryFacts: document.getElementById("memoryFacts"),
+      memoryPath: document.getElementById("memoryPath"),
+      memoryPreferences: document.getElementById("memoryPreferences"),
+      memoryRefreshBtn: document.getElementById("memoryRefreshBtn"),
+      memoryResults: document.getElementById("memoryResults"),
+      memorySaveBtn: document.getElementById("memorySaveBtn"),
+      memoryScope: document.getElementById("memoryScope"),
+      memorySearchBtn: document.getElementById("memorySearchBtn"),
+      memorySearchForm: document.getElementById("memorySearchForm"),
+      memorySearchQuery: document.getElementById("memorySearchQuery"),
+      memoryStructuredApplyBtn: document.getElementById("memoryStructuredApplyBtn"),
+      memoryTab: document.getElementById("memoryTab"),
+      memoryTodos: document.getElementById("memoryTodos"),
+      memoryWorkspace: document.getElementById("memoryWorkspace"),
 	      messages: document.getElementById("messages"),
 	      modelList: document.getElementById("modelList"),
 	      modelMenu: document.getElementById("modelMenu"),
@@ -52,6 +98,12 @@ export const codexAppClientScript = `    const els = {
 	      modelParamToggle: document.getElementById("modelParamToggle"),
 	      modelSearch: document.getElementById("modelSearch"),
 	      modelSelect: document.getElementById("modelSelect"),
+      gitCommitBar: document.getElementById("gitCommitBar"),
+      gitCommitBtn: document.getElementById("gitCommitBtn"),
+      gitCommitMessage: document.getElementById("gitCommitMessage"),
+      gitPrBtn: document.getElementById("gitPrBtn"),
+      gitPushBtn: document.getElementById("gitPushBtn"),
+      gitSuggestCommitBtn: document.getElementById("gitSuggestCommitBtn"),
       moveWorkspaceBtn: document.getElementById("moveWorkspaceBtn"),
 	      guideModeBtn: document.getElementById("guideModeBtn"),
 	      multiAgentMode: document.getElementById("multiAgentMode"),
@@ -60,10 +112,15 @@ export const codexAppClientScript = `    const els = {
       openProjectBtn: document.getElementById("openProjectBtn"),
       openProjectForm: document.getElementById("openProjectForm"),
       pageTitle: document.getElementById("pageTitle"),
+      permissionModeButton: document.getElementById("permissionModeButton"),
+      permissionModeLabel: document.getElementById("permissionModeLabel"),
+      permissionModeMenu: document.getElementById("permissionModeMenu"),
+      permissionModePicker: document.getElementById("permissionModePicker"),
+      popoutBtn: document.getElementById("popoutBtn"),
       projectList: document.getElementById("projectList"),
-      projectToast: document.getElementById("projectToast"),
-      prompt: document.getElementById("prompt"),
-      queuedRunList: document.getElementById("queuedRunList"),
+	      projectToast: document.getElementById("projectToast"),
+	      prompt: document.getElementById("prompt"),
+	      queuedRunList: document.getElementById("queuedRunList"),
       reviewCollapseBtn: document.getElementById("reviewCollapseBtn"),
       reviewResizeHandle: document.getElementById("reviewResizeHandle"),
       reviewToggleBtn: document.getElementById("reviewToggleBtn"),
@@ -71,9 +128,34 @@ export const codexAppClientScript = `    const els = {
       refreshChangesBtn: document.getElementById("refreshChangesBtn"),
       scrollBottomBtn: document.getElementById("scrollBottomBtn"),
       sendBtn: document.getElementById("sendBtn"),
+      sessionSearch: document.getElementById("sessionSearch"),
+      sessionShowArchived: document.getElementById("sessionShowArchived"),
+      sessionMemoryPanel: document.getElementById("sessionMemoryPanel"),
       sidePanel: document.getElementById("sidePanel"),
+      terminalCommand: document.getElementById("terminalCommand"),
+      terminalCopyBtn: document.getElementById("terminalCopyBtn"),
+      terminalForm: document.getElementById("terminalForm"),
+      terminalInput: document.getElementById("terminalInput"),
+      terminalInputBtn: document.getElementById("terminalInputBtn"),
+      terminalInputForm: document.getElementById("terminalInputForm"),
+      terminalOutput: document.getElementById("terminalOutput"),
+      terminalRunList: document.getElementById("terminalRunList"),
+      terminalRunBtn: document.getElementById("terminalRunBtn"),
+      terminalSearchClearBtn: document.getElementById("terminalSearchClearBtn"),
+      terminalSearchQuery: document.getElementById("terminalSearchQuery"),
+      terminalSearchResult: document.getElementById("terminalSearchResult"),
+      terminalStopBtn: document.getElementById("terminalStopBtn"),
+      terminalTab: document.getElementById("terminalTab"),
+      terminalWorkspace: document.getElementById("terminalWorkspace"),
+      themeModeSelect: document.getElementById("themeModeSelect"),
       workspaceBadge: document.getElementById("workspaceBadge"),
     }
+
+    const conversationPopoutMode =
+      new URLSearchParams(window.location.search).get("popout") === "conversation"
+    const windowSyncId =
+      Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+    let windowSyncChannel = null
 
     let state = {
       activeProject: null,
@@ -89,6 +171,8 @@ export const codexAppClientScript = `    const els = {
       launchCwd: "",
       model: "-",
       modelsLoaded: false,
+      pendingApprovals: [],
+      permissionMode: "full_access",
       projects: [],
       runningSessionIds: [],
       selectedModel: null,
@@ -96,6 +180,7 @@ export const codexAppClientScript = `    const els = {
 	    const messagesBySession = Object.create(null)
     const queuedRunsBySession = Object.create(null)
 	    let authBusy = false
+    let gitBusy = false
     const streamingAssistants = new Map()
     const streamingAssistantQueues = new Map()
     const streamingMultiRuns = new Map()
@@ -107,10 +192,13 @@ export const codexAppClientScript = `    const els = {
     const ASSISTANT_STREAM_FRAME_MS = 32
     const ASSISTANT_STREAM_MAX_CHUNK = 96
     const ASSISTANT_STREAM_MIN_CHUNK = 18
-    const MAX_ATTACHMENTS = 8
-    const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
-    const MAX_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
-    const MESSAGES_BOTTOM_THRESHOLD = 72
+	    const MAX_ATTACHMENTS = 8
+	    const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+	    const MAX_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
+	    const LONG_PASTE_ATTACHMENT_MIN_CHARS = 1200
+	    const LONG_PASTE_ATTACHMENT_MIN_LINES = 12
+	    const PASTE_ATTACHMENT_PREVIEW_CHARS = 180
+	    const MESSAGES_BOTTOM_THRESHOLD = 72
     let messagesAutoFollow = true
     let scheduledMessagesRender = 0
     let scrollingToBottom = false
@@ -124,24 +212,57 @@ export const codexAppClientScript = `    const els = {
     let attachmentIdCounter = 0
     let guideMode = false
     let runIdCounter = 0
+    let terminalPollTimer = 0
+    let approvalPollTimer = 0
+    let approvalBusy = false
+    let activeTerminalId = ""
+    let latestTerminals = []
+    const terminalLastLineIds = Object.create(null)
     const USER_ATTACHMENT_MESSAGE_PREFIX = "[[coding-agent-user-message-v1]]"
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
-    const REVIEW_PANEL_MIN_WIDTH = 320
-    const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
+    const THEME_MODE_STORAGE_KEY = "coding-agent-theme-mode"
+    const PROMPT_HISTORY_STORAGE_KEY = "coding-agent-prompt-history"
+    const PROMPT_HISTORY_MAX_ITEMS = 80
+    const REVIEW_PANEL_MIN_WIDTH = 360
+    const REVIEW_PANEL_MAX_WIDTH = 780
+    const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 520
     const READABLE_PARAGRAPH_MIN_CHARS = 180
     const READABLE_PARAGRAPH_TARGET_CHARS = 110
     const READABLE_PARAGRAPH_MAX_CHARS = 150
-    const MODEL_SWITCH_SESSION_WARNING = "会话中切换模型，或许会有降智影响。是否继续切换？"
+    const MODEL_SWITCH_SESSION_WARNING = "当前会话记忆会保留并带入后续请求，但不同模型可能对既有上下文的理解不同。是否继续切换？"
+    const PERMISSION_MODE_DETAILS = {
+      read_only: { label: "请求批准", icon: "?" },
+      auto: { label: "替我审批", icon: "⌁" },
+      full_access: { label: "完全访问", icon: "!" },
+    }
     let reviewPanelHidden = false
     let reviewPanelWidth = 0
     let reviewResizeState = null
     let reviewMode = "changes"
+    let themeMode = loadThemeMode()
+    let activeDiffCommentPath = ""
+    let artifactBusy = false
     let browserAnnotating = false
     let browserCommentId = 0
     let browserComments = []
     let browserDraftPoint = null
+    let latestBrowserInspection = null
+    let latestExtensions = null
+    let extensionBusy = false
+    let latestMemories = []
+    let latestMemoryResults = []
+    let latestSessionMemory = null
+    let memoryBusy = false
+    let memoryDirty = false
+    let memoryError = ""
+    let latestAutomations = []
+    let automationBusy = false
+    let automationPreviewTimer = null
     let devReloadReady = false
     let devReloadSource = null
+    let promptHistory = loadPromptHistory()
+    let promptHistoryCursor = -1
+    let promptHistoryDraft = ""
 
     function setToast(element, text, isError) {
       element.textContent = text || ""
@@ -153,9 +274,11 @@ export const codexAppClientScript = `    const els = {
         const prefs = JSON.parse(window.localStorage.getItem(REVIEW_PANEL_STORAGE_KEY) || "{}")
         reviewPanelHidden = Boolean(prefs.hidden)
         reviewPanelWidth = Number.isFinite(prefs.width) ? prefs.width : 0
+        reviewMode = normalizeReviewMode(prefs.mode)
       } catch {
         reviewPanelHidden = false
         reviewPanelWidth = 0
+        reviewMode = "changes"
       }
       applyReviewPanelLayout()
     }
@@ -166,20 +289,180 @@ export const codexAppClientScript = `    const els = {
           REVIEW_PANEL_STORAGE_KEY,
           JSON.stringify({
             hidden: reviewPanelHidden,
+            mode: reviewMode,
             width: reviewPanelWidth || null,
           })
         )
       } catch {}
     }
 
+    function normalizeReviewMode(mode) {
+      return mode === "browser" ||
+        mode === "artifacts" ||
+        mode === "terminal" ||
+        mode === "extensions" ||
+        mode === "memory" ||
+        mode === "automations"
+        ? mode
+        : "changes"
+    }
+
+    function normalizeThemeMode(mode) {
+      return mode === "light" || mode === "dark" ? mode : "system"
+    }
+
+    function loadThemeMode() {
+      try {
+        return normalizeThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY))
+      } catch {
+        return "system"
+      }
+    }
+
+    function persistThemeMode() {
+      try {
+        window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode)
+      } catch {}
+    }
+
+    function applyThemeMode() {
+      if (themeMode === "system") {
+        document.documentElement.removeAttribute("data-theme")
+      } else {
+        document.documentElement.setAttribute("data-theme", themeMode)
+      }
+      els.themeModeSelect.value = themeMode
+    }
+
+    function setThemeMode(mode) {
+      themeMode = normalizeThemeMode(mode)
+      applyThemeMode()
+      persistThemeMode()
+    }
+
+    function applyWindowMode() {
+      document.body.classList.toggle("conversation-popout", conversationPopoutMode)
+      els.popoutBtn.hidden = conversationPopoutMode
+      els.reviewToggleBtn.hidden = conversationPopoutMode
+    }
+
+    function openConversationPopout() {
+      const url = new URL(window.location.href)
+      url.searchParams.set("popout", "conversation")
+      window.open(
+        url.toString(),
+        "coding-agent-conversation",
+        "popup,width=1120,height=900"
+      )
+    }
+
+    function setupWindowSync() {
+      if (!("BroadcastChannel" in window)) return
+      try {
+        windowSyncChannel = new BroadcastChannel("coding-agent-window-sync")
+        windowSyncChannel.addEventListener("message", (event) => {
+          const message = event.data || {}
+          if (message.source === windowSyncId) return
+          if (message.kind === "stream_event" && message.payload) {
+            handleStreamEvent(
+              message.payload,
+              message.sessionId || state.activeSessionId,
+              message.requestRunId || "",
+              true
+            )
+          }
+          if (message.kind === "multi_state" && message.state) {
+            updateMultiAgentRun(message.state, message.sessionId || state.activeSessionId)
+          }
+        })
+      } catch {
+        windowSyncChannel = null
+      }
+    }
+
+    function publishWindowSync(message) {
+      if (!windowSyncChannel) return
+      try {
+        windowSyncChannel.postMessage(Object.assign({ source: windowSyncId }, message))
+      } catch {}
+    }
+
+    function loadPromptHistory() {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem(PROMPT_HISTORY_STORAGE_KEY) || "[]")
+        return Array.isArray(parsed)
+          ? parsed.map((item) => String(item || "").trim()).filter(Boolean).slice(0, PROMPT_HISTORY_MAX_ITEMS)
+          : []
+      } catch {
+        return []
+      }
+    }
+
+    function savePromptHistory() {
+      try {
+        window.localStorage.setItem(
+          PROMPT_HISTORY_STORAGE_KEY,
+          JSON.stringify(promptHistory.slice(0, PROMPT_HISTORY_MAX_ITEMS))
+        )
+      } catch {}
+    }
+
+    function recordPromptHistory(prompt) {
+      const text = String(prompt || "").trim()
+      if (!text || text.startsWith("/")) return
+      promptHistory = [text, ...promptHistory.filter((item) => item !== text)].slice(
+        0,
+        PROMPT_HISTORY_MAX_ITEMS
+      )
+      promptHistoryCursor = -1
+      promptHistoryDraft = ""
+      savePromptHistory()
+    }
+
+    function matchingPromptHistory(query) {
+      const normalized = normalizeTextForSearch(query)
+      const items = normalized
+        ? promptHistory.filter((item) => normalizeTextForSearch(item).includes(normalized))
+        : promptHistory
+      return items.slice(0, 10)
+    }
+
+    function navigatePromptHistory(direction) {
+      if (promptHistory.length === 0) return false
+      const selectionStart = els.prompt.selectionStart || 0
+      const atTop = selectionStart === 0
+      const atBottom = selectionStart === els.prompt.value.length
+      if (direction < 0 && els.prompt.value && !atTop && promptHistoryCursor < 0) return false
+      if (direction > 0 && !atBottom) return false
+
+      if (promptHistoryCursor < 0) {
+        promptHistoryDraft = els.prompt.value
+      }
+
+      const nextCursor =
+        promptHistoryCursor < 0 && direction < 0
+          ? 0
+          : promptHistoryCursor + (direction < 0 ? 1 : -1)
+      promptHistoryCursor = Math.max(-1, Math.min(promptHistory.length - 1, nextCursor))
+      els.prompt.value =
+        promptHistoryCursor >= 0 ? promptHistory[promptHistoryCursor] : promptHistoryDraft
+      resizePrompt()
+      updateControls()
+      return true
+    }
+
+    function normalizeTextForSearch(text) {
+      return String(text || "").toLowerCase().replace(/[\\s\\t\\r\\n]+/g, " ").trim()
+    }
+
     function clampReviewPanelWidth(width) {
       const mainWidth = els.main.getBoundingClientRect().width || window.innerWidth
       const maxWidth = Math.max(
         REVIEW_PANEL_MIN_WIDTH,
-        mainWidth - REVIEW_PANEL_MIN_CONVERSATION_WIDTH
+        Math.min(REVIEW_PANEL_MAX_WIDTH, mainWidth - REVIEW_PANEL_MIN_CONVERSATION_WIDTH)
       )
       const defaultWidth = Math.min(
-        Math.max(Math.round(mainWidth * 0.46), REVIEW_PANEL_MIN_WIDTH),
+        Math.max(Math.round(mainWidth * 0.39), REVIEW_PANEL_MIN_WIDTH),
         maxWidth
       )
       const desired = Number.isFinite(width) && width > 0 ? width : defaultWidth
@@ -268,8 +551,142 @@ export const codexAppClientScript = `    const els = {
       renderHeader()
       renderMessages()
       renderQueuedRunList()
+      renderApprovals()
       renderModelPicker()
       updateControls()
+      syncApprovalPolling()
+    }
+
+    function renderApprovals() {
+      const approvals = Array.isArray(state.pendingApprovals)
+        ? state.pendingApprovals
+        : []
+      els.approvalPanel.hidden = approvals.length === 0
+      els.approvalPanel.innerHTML = ""
+      if (approvals.length === 0) return
+
+      const header = document.createElement("div")
+      header.className = "approval-panel-header"
+      const title = document.createElement("strong")
+      title.textContent = "待审批命令"
+      const count = document.createElement("span")
+      count.textContent = String(approvals.length)
+      header.appendChild(title)
+      header.appendChild(count)
+      els.approvalPanel.appendChild(header)
+
+      for (const approval of approvals) {
+        const row = document.createElement("div")
+        row.className = "approval-card risk-" + String(approval.risk || "medium")
+
+        const body = document.createElement("div")
+        body.className = "approval-card-body"
+
+        const command = document.createElement("code")
+        command.textContent = approval.command || ""
+        body.appendChild(command)
+
+        const meta = document.createElement("div")
+        meta.className = "approval-meta"
+        const sessionTitle = findSessionTitle(approval.sessionId)
+        meta.textContent = [
+          approval.risk ? "风险：" + approval.risk : "",
+          approval.source ? "来源：" + approval.source : "",
+          sessionTitle ? "会话：" + sessionTitle : "",
+          approval.cwd ? "目录：" + shortenInline(approval.cwd, 88) : "",
+          approval.reason ? "原因：" + approval.reason : "",
+          approval.createdAt ? "时间：" + formatTime(approval.createdAt) : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+        body.appendChild(meta)
+
+        const actions = document.createElement("div")
+        actions.className = "approval-actions"
+        actions.appendChild(
+          approvalButton("批准一次", approval.id, "approve_once")
+        )
+        actions.appendChild(
+          approvalButton("本会话批准", approval.id, "approve_session")
+        )
+        actions.appendChild(approvalButton("拒绝", approval.id, "deny", true))
+
+        row.appendChild(body)
+        row.appendChild(actions)
+        els.approvalPanel.appendChild(row)
+      }
+    }
+
+    function approvalButton(label, approvalId, action, danger) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.textContent = label
+      button.disabled = approvalBusy
+      if (danger) button.className = "danger"
+      button.addEventListener("click", () => {
+        void resolveApproval(approvalId, action)
+      })
+      return button
+    }
+
+    function findSessionTitle(sessionId) {
+      for (const project of state.projects || []) {
+        for (const session of project.sessions || []) {
+          if (session.id === sessionId) {
+            return session.title || session.id
+          }
+        }
+      }
+      return ""
+    }
+
+    async function resolveApproval(approvalId, action) {
+      if (!approvalId || approvalBusy) return
+      approvalBusy = true
+      renderApprovals()
+      try {
+        const result = await postJson("/api/approvals/resolve", {
+          action,
+          approvalId,
+        })
+        applyState(result)
+        appendMeta("[权限] " + (result.message || "审批已处理。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        approvalBusy = false
+        renderApprovals()
+        updateControls()
+        syncApprovalPolling()
+      }
+    }
+
+    function syncApprovalPolling() {
+      const pendingCount = Array.isArray(state.pendingApprovals)
+        ? state.pendingApprovals.length
+        : 0
+      const runningCount = Array.isArray(state.runningSessionIds)
+        ? state.runningSessionIds.length
+        : 0
+      const shouldPoll = Boolean(state.busy || runningCount > 0 || pendingCount > 0)
+      if (!shouldPoll) {
+        if (approvalPollTimer) {
+          window.clearTimeout(approvalPollTimer)
+          approvalPollTimer = 0
+        }
+        return
+      }
+      if (approvalPollTimer) return
+
+      approvalPollTimer = window.setTimeout(async () => {
+        approvalPollTimer = 0
+        try {
+          await refreshStatus()
+        } catch {
+        } finally {
+          syncApprovalPolling()
+        }
+      }, 1200)
     }
 
     function activeMessages(sessionId) {
@@ -400,6 +817,7 @@ export const codexAppClientScript = `    const els = {
 
       renderSidebar()
       updateControls()
+      syncApprovalPolling()
     }
 
     function setLocalSessionActiveRun(sessionId, active) {
@@ -434,6 +852,33 @@ export const codexAppClientScript = `    const els = {
       updateControls()
     }
 
+    function normalizePermissionModeForUi(mode) {
+      return Object.prototype.hasOwnProperty.call(PERMISSION_MODE_DETAILS, mode)
+        ? mode
+        : "full_access"
+    }
+
+    function renderPermissionModeControl(mode) {
+      const activeMode = normalizePermissionModeForUi(mode || state.permissionMode)
+      const details = PERMISSION_MODE_DETAILS[activeMode]
+      els.permissionModeLabel.textContent = details.label
+      els.permissionModeButton.dataset.mode = activeMode
+      els.permissionModeButton.title = "权限访问：" + details.label
+      const icon = els.permissionModeButton.querySelector(".permission-mode-icon")
+      if (icon) icon.textContent = details.icon
+      for (const option of els.permissionModeMenu.querySelectorAll("[data-permission-mode]")) {
+        const selected = option.dataset.permissionMode === activeMode
+        option.classList.toggle("active", selected)
+        option.setAttribute("aria-checked", selected ? "true" : "false")
+      }
+    }
+
+    function setPermissionModeMenuOpen(open) {
+      const shouldOpen = Boolean(open && !els.permissionModeButton.disabled)
+      els.permissionModeMenu.hidden = !shouldOpen
+      els.permissionModeButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false")
+    }
+
     function updateControls() {
       const hasProject = Boolean(state.activeProjectId)
       const hasSession = Boolean(state.activeSessionId)
@@ -444,6 +889,18 @@ export const codexAppClientScript = `    const els = {
       const sendCancelsRun = activeRunning && !hasDraft
       const modelsLoaded = Boolean(state.modelsLoaded)
       const canPersistApiKey = Boolean(state.canPersistApiKey)
+      const changeFiles = Array.isArray(latestChanges.files) ? latestChanges.files : []
+      const gitState = latestChanges.git || {}
+      const hasStagedChanges =
+        changeFiles.some((file) => Boolean(file.staged)) ||
+        Boolean(gitState.hasStagedChanges)
+      const showGitCommit =
+        reviewMode === "changes" &&
+        hasSession &&
+        Boolean(latestChanges.available) &&
+        (changeFiles.length > 0 ||
+          Boolean(gitState.canPush) ||
+          Boolean(gitState.canCreatePullRequest))
       if (!activeRunning && guideMode) {
         guideMode = false
       }
@@ -461,15 +918,90 @@ export const codexAppClientScript = `    const els = {
       els.authStatus.classList.toggle("loading", authBusy)
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
       els.newWorktreeSessionBtn.disabled = !hasProject || !modelsLoaded || busy
+      els.artifactPath.disabled = !hasSession || artifactBusy
+      els.artifactPreviewBtn.disabled =
+        !hasSession || artifactBusy || !els.artifactPath.value.trim()
       const hasBrowserUrl = Boolean(els.browserUrl.value.trim() || els.browserFrame.src)
       els.browserFeedback.disabled = !hasSession
       els.browserFeedbackBtn.disabled =
         !hasSession || !hasBrowserUrl || !els.browserFeedback.value.trim()
       els.browserAnnotateBtn.disabled = !hasBrowserUrl
+      els.browserInspectBtn.disabled = !hasSession || !hasBrowserUrl
+      els.browserMcpBtn.disabled = !hasSession
       els.browserOpenBtn.disabled = !els.browserUrl.value.trim()
+      els.extensionsRefreshBtn.disabled = !hasSession || extensionBusy
+      els.memoryScope.disabled = !hasSession || memoryBusy
+      els.memoryEnabled.disabled = !hasSession || memoryBusy
+      els.memoryEditor.disabled = !hasSession || memoryBusy
+      els.memoryFacts.disabled = !hasSession || memoryBusy
+      els.memoryPreferences.disabled = !hasSession || memoryBusy
+      els.memoryRefreshBtn.disabled = !hasSession || memoryBusy
+      els.memorySaveBtn.disabled = !hasSession || memoryBusy
+      els.memoryStructuredApplyBtn.disabled = !hasSession || memoryBusy
+      els.memoryTodos.disabled = !hasSession || memoryBusy
+      els.memoryClearBtn.disabled =
+        !hasSession || memoryBusy || !els.memoryEditor.value.trim()
+      els.memorySearchQuery.disabled = !hasSession || memoryBusy
+      els.memorySearchBtn.disabled =
+        !hasSession || memoryBusy || !els.memorySearchQuery.value.trim()
+      const automationCronMode = els.automationScheduleMode.value === "cron"
+      els.automationScheduleMode.disabled = !hasSession || automationBusy
+      els.automationInterval.hidden = automationCronMode
+      els.automationCron.hidden = !automationCronMode
+      els.automationInterval.disabled = !hasSession || automationBusy || automationCronMode
+      els.automationCron.disabled = !hasSession || automationBusy || !automationCronMode
+      els.automationPermission.disabled = !hasSession || automationBusy
+      els.automationPrompt.disabled = !hasSession || automationBusy
+      els.automationTitle.disabled = !hasSession || automationBusy
+      els.automationCreateBtn.disabled =
+        !hasSession ||
+        automationBusy ||
+        !els.automationPrompt.value.trim() ||
+        (automationCronMode && !els.automationCron.value.trim())
       els.moveWorkspaceBtn.hidden = !hasSession
       els.discardSessionBtn.hidden = !hasSession
       els.workspaceBadge.hidden = !hasSession
+      renderPermissionModeControl()
+      els.permissionModeButton.disabled = busy
+      for (const control of els.permissionModeMenu.querySelectorAll("[data-permission-mode]")) {
+        control.disabled = busy
+      }
+      if (busy) setPermissionModeMenuOpen(false)
+      els.themeModeSelect.value = themeMode
+      els.popoutBtn.disabled = conversationPopoutMode
+      els.gitCommitBar.hidden = !showGitCommit
+      els.gitCommitMessage.disabled = gitBusy || activeBusy || !hasSession
+      els.gitCommitBtn.disabled =
+        gitBusy ||
+        activeBusy ||
+        !hasSession ||
+        !hasStagedChanges ||
+        !els.gitCommitMessage.value.trim()
+      els.gitSuggestCommitBtn.disabled =
+        gitBusy ||
+        activeBusy ||
+        !hasSession ||
+        !hasStagedChanges
+      els.gitPushBtn.disabled =
+        gitBusy ||
+        activeBusy ||
+        !hasSession ||
+        !gitState.canPush
+      els.gitPrBtn.disabled =
+        gitBusy ||
+        activeBusy ||
+        !hasSession ||
+        !gitState.canCreatePullRequest
+      const terminalRunning = activeTerminalStatus() === "running"
+      els.terminalCommand.disabled = !hasSession
+      els.terminalRunBtn.disabled = !hasSession || !els.terminalCommand.value.trim()
+      els.terminalStopBtn.disabled = !terminalRunning
+      els.terminalCopyBtn.disabled = !activeTerminalId || !els.terminalOutput.textContent.trim()
+      els.terminalSearchQuery.disabled = !hasSession || !activeTerminalId
+      els.terminalSearchClearBtn.disabled =
+        !hasSession || !activeTerminalId || !els.terminalSearchQuery.value.trim()
+      els.terminalInput.disabled = !terminalRunning
+      els.terminalInputBtn.disabled = !terminalRunning || !els.terminalInput.value.length
       els.moveWorkspaceBtn.disabled = activeBusy || !hasSession
       els.discardSessionBtn.disabled = activeBusy || !hasSession
 	      els.modelSelect.disabled = activeBusy || !modelsLoaded
@@ -481,10 +1013,10 @@ export const codexAppClientScript = `    const els = {
       for (const control of els.modelParamList.querySelectorAll("button")) {
         control.disabled = activeBusy || !modelsLoaded
       }
-      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
-	      els.prompt.disabled = !hasSession || !modelsLoaded
-      els.attachmentBtn.disabled = !hasSession || !modelsLoaded
-      els.guideModeBtn.hidden = true
+	      els.multiAgentMode.disabled = activeBusy || !hasSession || !modelsLoaded
+		      els.prompt.disabled = !hasSession || !modelsLoaded
+	      els.attachmentBtn.disabled = !hasSession || !modelsLoaded
+	      els.guideModeBtn.hidden = true
       els.guideModeBtn.disabled = true
       els.guideModeBtn.classList.toggle("active", guideMode)
       els.guideModeBtn.setAttribute("aria-pressed", guideMode ? "true" : "false")
@@ -537,10 +1069,10 @@ export const codexAppClientScript = `    const els = {
       els.contextMeter.title = hasUsage
         ? contextUsageTitle(usage)
         : "暂无会话"
-      els.contextMeterText.textContent = hasUsage ? usage.percentUsed + "%" : "--"
+      els.contextMeterText.textContent = hasUsage ? contextUsagePercentLabel(usage) : "--"
       els.contextPopoverTitle.textContent = hasUsage
         ? usage.contextWindowKind === "model"
-          ? "模型上下文窗口："
+          ? "模型上下文预算："
           : "本地上下文预算："
         : "上下文预算："
       els.contextPopoverPercent.textContent = hasUsage ? contextUsagePercentText(usage) : "暂无会话"
@@ -586,20 +1118,28 @@ export const codexAppClientScript = `    const els = {
     }
 
     function contextUsageTitle(usage) {
+      const percent = contextUsagePercentLabel(usage)
       return usage.contextWindowKind === "model"
-        ? usage.percentUsed + "% 已用，模型窗口 " + formatTokenCount(usage.modelMaxTokens) +
-          "，可用预算 " + formatTokenCount(usage.maxTokens)
-        : usage.percentUsed + "% 已用，本地预算 " + formatTokenCount(usage.maxTokens)
+        ? percent + " 已用，可用预算 " + formatTokenCount(usage.maxTokens) +
+          "，模型窗口 " + formatTokenCount(usage.modelMaxTokens)
+        : percent + " 已用，本地预算 " + formatTokenCount(usage.maxTokens)
     }
 
     function contextUsagePercentText(usage) {
+      const percent = contextUsagePercentLabel(usage)
       if (usage.contextWindowKind === "model") {
-        return usage.percentUsed + "% 已用（模型窗口 " +
-          formatTokenCount(usage.modelMaxTokens) + "，剩余 " +
-          formatTokenCount(usage.remainingTokens) + "）"
+        return percent + " 已用（可用预算 " + formatTokenCount(usage.maxTokens) +
+          "，剩余 " + formatTokenCount(usage.remainingTokens) +
+          "；模型窗口 " + formatTokenCount(usage.modelMaxTokens) + "）"
       }
 
-      return usage.percentUsed + "% 已用（剩余 " + usage.percentRemaining + "%）"
+      return percent + " 已用（剩余 " + usage.percentRemaining + "%）"
+    }
+
+    function contextUsagePercentLabel(usage) {
+      return usage.usedTokens > 0 && usage.percentUsed === 0
+        ? "<1%"
+        : usage.percentUsed + "%"
     }
 
     function contextUsageDetailText(usage) {
@@ -647,6 +1187,42 @@ export const codexAppClientScript = `    const els = {
 
     function formatCompactNumber(value) {
       return value.toFixed(1).replace(/\\.0$/, "")
+    }
+
+    function visibleProjectSessions(sessions) {
+      const query = els.sessionSearch.value.trim().toLowerCase()
+      const showArchived = els.sessionShowArchived.checked
+      return (sessions || [])
+        .filter((session) => showArchived || !session.archived)
+        .filter((session) => {
+          if (!query) return true
+          return [session.title, session.workspaceCwd, session.workspaceMode]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query))
+        })
+        .sort((left, right) => {
+          if (Boolean(left.pinned) !== Boolean(right.pinned)) {
+            return left.pinned ? -1 : 1
+          }
+          if (Boolean(left.archived) !== Boolean(right.archived)) {
+            return left.archived ? 1 : -1
+          }
+          return (right.updatedAt || 0) - (left.updatedAt || 0)
+        })
+    }
+
+    function sessionWorkspaceOutsideProject(session, project) {
+      return Boolean(
+        session &&
+          project &&
+          session.workspaceCwd &&
+          project.cwd &&
+          normalizeWorkspacePath(session.workspaceCwd) !== normalizeWorkspacePath(project.cwd)
+      )
+    }
+
+    function normalizeWorkspacePath(value) {
+      return String(value || "").replace(/\\\\/g, "/").replace(/\\/+$/, "")
     }
 
     function renderSidebar() {
@@ -709,13 +1285,19 @@ export const codexAppClientScript = `    const els = {
 
         const sessions = document.createElement("div")
         sessions.className = "session-list"
+        const visibleSessions = visibleProjectSessions(project.sessions)
         if (!project.sessions || project.sessions.length === 0) {
           const empty = document.createElement("div")
           empty.className = "empty-list"
           empty.textContent = "还没有会话"
           sessions.appendChild(empty)
+        } else if (visibleSessions.length === 0) {
+          const empty = document.createElement("div")
+          empty.className = "empty-list"
+          empty.textContent = "无匹配会话"
+          sessions.appendChild(empty)
         } else {
-          for (const session of project.sessions) {
+          for (const session of visibleSessions) {
             const sessionItem = document.createElement("div")
             sessionItem.className = "session-item"
             const sessionButton = document.createElement("button")
@@ -723,23 +1305,54 @@ export const codexAppClientScript = `    const els = {
             sessionButton.className =
               "session-row" +
               (session.id === state.activeSessionId ? " active" : "") +
-              (isSessionRunning(session.id) ? " running" : "")
+              (isSessionRunning(session.id) ? " running" : "") +
+              (session.pinned ? " pinned" : "") +
+              (session.archived ? " archived" : "")
             sessionButton.addEventListener("click", () => selectSession(session.id))
             const marker = document.createElement("span")
             marker.className = "icon"
-            marker.textContent = isSessionRunning(session.id) ? "●" : "·"
+            marker.textContent = isSessionRunning(session.id) ? "●" : session.pinned ? "★" : "·"
             const label = document.createElement("span")
             label.className = "session-title"
             label.textContent = session.title
             sessionButton.appendChild(marker)
             sessionButton.appendChild(label)
-            if (session.workspaceMode === "worktree") {
+            if (
+              session.workspaceMode === "worktree" ||
+              sessionWorkspaceOutsideProject(session, project)
+            ) {
               const badge = document.createElement("span")
               badge.className = "session-workspace-badge"
-              badge.textContent = "W"
-              badge.title = session.workspaceCwd || "Worktree"
+              badge.textContent = session.workspaceMode === "worktree" ? "W" : "跨"
+              badge.title =
+                session.workspaceMode === "worktree"
+                  ? session.workspaceCwd || "Worktree"
+                  : "实际 workspace：" + (session.workspaceCwd || "")
               sessionButton.appendChild(badge)
             }
+
+            const pinButton = document.createElement("button")
+            pinButton.type = "button"
+            pinButton.className = "session-pin"
+            pinButton.title = session.pinned ? "取消置顶" : "置顶会话"
+            pinButton.setAttribute("aria-label", pinButton.title + " " + session.title)
+            pinButton.textContent = session.pinned ? "★" : "☆"
+            pinButton.addEventListener("click", (event) => {
+              event.stopPropagation()
+              void updateSessionFlags(session.id, { pinned: !session.pinned })
+            })
+
+            const archiveButton = document.createElement("button")
+            archiveButton.type = "button"
+            archiveButton.className = "session-archive"
+            archiveButton.title = session.archived ? "恢复会话" : "归档会话"
+            archiveButton.setAttribute("aria-label", archiveButton.title + " " + session.title)
+            archiveButton.textContent = session.archived ? "还" : "归"
+            archiveButton.disabled = isSessionRunning(session.id)
+            archiveButton.addEventListener("click", (event) => {
+              event.stopPropagation()
+              void updateSessionFlags(session.id, { archived: !session.archived })
+            })
 
             const deleteButton = document.createElement("button")
             deleteButton.type = "button"
@@ -754,6 +1367,8 @@ export const codexAppClientScript = `    const els = {
             })
 
             sessionItem.appendChild(sessionButton)
+            sessionItem.appendChild(pinButton)
+            sessionItem.appendChild(archiveButton)
             sessionItem.appendChild(deleteButton)
             sessions.appendChild(sessionItem)
           }
@@ -766,7 +1381,8 @@ export const codexAppClientScript = `    const els = {
     function renderHeader() {
       if (state.activeSession) {
         els.pageTitle.textContent = state.activeSession.title
-        els.cwd.textContent = state.activeSession.workspaceCwd || (state.activeProject ? state.activeProject.cwd : "")
+        els.cwd.textContent =
+          state.activeSession.workspaceCwd || (state.activeProject ? state.activeProject.cwd : "")
         const mode = state.activeSession.workspaceMode === "worktree" ? "Worktree" : "Local"
         els.workspaceBadge.textContent = mode
         els.workspaceBadge.dataset.mode = state.activeSession.workspaceMode || "local"
@@ -836,29 +1452,73 @@ export const codexAppClientScript = `    const els = {
       updateScrollBottomButton()
     }
 
-    function resizePrompt() {
-      els.prompt.style.height = "auto"
-      const nextHeight = Math.min(190, Math.max(54, els.prompt.scrollHeight))
-      els.prompt.style.height = nextHeight + "px"
+    function syncComposerReservedSpace() {
+      if (!els.composerWrap) return
+      const wasNearBottom = isMessagesNearBottom()
+      const composerHeight = Math.ceil(els.composerWrap.getBoundingClientRect().height)
+      const reservedHeight = Math.max(160, composerHeight + 36)
+      els.conversation.style.setProperty("--composer-reserved-height", reservedHeight + "px")
+      if (wasNearBottom) {
+        window.requestAnimationFrame(() => scrollMessagesToBottom())
+      } else {
+        updateScrollBottomButton()
+      }
     }
 
-    function addAttachmentFiles(fileList) {
-      if (!state.activeSessionId || !state.modelsLoaded) {
-        setToast(els.projectToast, "请先打开项目并新建会话。", true)
-        return
-      }
+    function canScrollElementByDelta(element, deltaY) {
+      if (!element || Math.abs(deltaY) < 1) return false
+      const maxScrollTop = element.scrollHeight - element.clientHeight
+      if (maxScrollTop <= 1) return false
+      if (deltaY < 0) return element.scrollTop > 0
+      return element.scrollTop < maxScrollTop - 1
+    }
 
-      const files = Array.from(fileList || [])
-      if (files.length === 0) return
+    function forwardComposerWheelToMessages(event) {
+      if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return
+      const target = event.target instanceof Element ? event.target : null
+      const localScroller = target
+        ? target.closest("textarea, .attachment-list, .queued-run-list, .permission-menu, .model-list, .model-param-list")
+        : null
+      if (localScroller && canScrollElementByDelta(localScroller, event.deltaY)) return
 
-      const next = pendingAttachments.slice()
-      let totalBytes = next.reduce((sum, item) => sum + item.file.size, 0)
-      const rejected = []
+      const maxScrollTop = Math.max(0, els.messages.scrollHeight - els.messages.clientHeight)
+      if (maxScrollTop <= 0) return
+      const nextScrollTop = Math.max(0, Math.min(maxScrollTop, els.messages.scrollTop + event.deltaY))
+      if (nextScrollTop === els.messages.scrollTop) return
+      event.preventDefault()
+      els.messages.scrollTop = nextScrollTop
+      updateMessagesAutoFollow()
+    }
 
-      for (const file of files) {
-        if (next.length >= MAX_ATTACHMENTS) {
-          rejected.push(file.name + "：最多 " + MAX_ATTACHMENTS + " 个附件")
-          continue
+    function resizePrompt() {
+      els.prompt.style.height = "auto"
+      const nextHeight = Math.min(120, Math.max(40, els.prompt.scrollHeight))
+      els.prompt.style.height = nextHeight + "px"
+      syncComposerReservedSpace()
+    }
+
+	    function addAttachmentFiles(fileList) {
+	      addAttachmentItems(Array.from(fileList || []).map((file) => ({ file })))
+	    }
+
+	    function addAttachmentItems(items) {
+	      if (!state.activeSessionId || !state.modelsLoaded) {
+	        setToast(els.projectToast, "请先打开项目并新建会话。", true)
+	        return
+	      }
+	
+	      if (!items || items.length === 0) return
+	
+	      const next = pendingAttachments.slice()
+	      let totalBytes = next.reduce((sum, item) => sum + item.file.size, 0)
+	      const rejected = []
+	
+	      for (const attachment of items) {
+	        const file = attachment.file
+	        if (!file) continue
+	        if (next.length >= MAX_ATTACHMENTS) {
+	          rejected.push(file.name + "：最多 " + MAX_ATTACHMENTS + " 个附件")
+	          continue
         }
 
         if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -879,13 +1539,16 @@ export const codexAppClientScript = `    const els = {
         )
         if (duplicate) continue
 
-        next.push({
-          file,
-          id: "attachment-" + ++attachmentIdCounter,
-          previewUrl: isImageAttachment(file) ? URL.createObjectURL(file) : "",
-        })
-        totalBytes += file.size
-      }
+	        next.push({
+	          file,
+	          id: "attachment-" + ++attachmentIdCounter,
+	          previewUrl: isImageAttachment(file) ? URL.createObjectURL(file) : "",
+	          previewText: attachment.previewText || "",
+	          source: attachment.source || "",
+	          text: attachment.text || "",
+	        })
+	        totalBytes += file.size
+	      }
 
       pendingAttachments = next
       renderAttachmentList()
@@ -893,8 +1556,44 @@ export const codexAppClientScript = `    const els = {
 
       if (rejected.length > 0) {
         setToast(els.projectToast, rejected.slice(0, 2).join("；"), true)
-      }
-    }
+	      }
+	    }
+
+	    function addPastedTextAttachment(text) {
+	      const value = String(text || "")
+	      if (!isLongPastedText(value)) return false
+
+	      const now = new Date()
+	      const file = new File([value], pastedTextFileName(now), {
+	        lastModified: now.getTime(),
+	        type: "text/plain;charset=utf-8",
+	      })
+	      addAttachmentItems([
+	        {
+	          file,
+	          previewText: pastedTextPreview(value),
+	          source: "pasted_text",
+	          text: value,
+	        },
+	      ])
+	      return true
+	    }
+
+	    function isLongPastedText(text) {
+	      const value = String(text || "")
+	      if (!value.trim()) return false
+	      if (value.length >= LONG_PASTE_ATTACHMENT_MIN_CHARS) return true
+	      return value.split(/\\r\\n|\\r|\\n/).length >= LONG_PASTE_ATTACHMENT_MIN_LINES
+	    }
+
+	    function pastedTextFileName(date) {
+	      const stamp = date.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14)
+	      return "pasted-text-" + stamp + ".txt"
+	    }
+
+	    function pastedTextPreview(text) {
+	      return shortenInline(compactText(text), PASTE_ATTACHMENT_PREVIEW_CHARS)
+	    }
 
     function renderAttachmentList() {
       els.attachmentList.textContent = ""
@@ -904,21 +1603,55 @@ export const codexAppClientScript = `    const els = {
         els.attachmentList.appendChild(
           createAttachmentPreviewCard(
             {
-              name: item.file.name || "未命名文件",
-              previewUrl: item.previewUrl,
-              size: item.file.size,
-              type: item.file.type || "",
-            },
-            () => {
-              revokeAttachmentPreview(item)
-              pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
-              renderAttachmentList()
-              updateControls()
-            }
-          )
-        )
+	              name: item.file.name || "未命名文件",
+	              previewText: item.previewText || "",
+	              previewUrl: item.previewUrl,
+	              source: item.source || "",
+	              size: item.file.size,
+	              type: item.file.type || "",
+	            },
+	            {
+	              onRemove: () => {
+	                revokeAttachmentPreview(item)
+	                pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
+	                renderAttachmentList()
+	                updateControls()
+	              },
+	              onReveal:
+	                item.source === "pasted_text"
+	                  ? () => revealPastedTextAttachment(item)
+	                  : null,
+	            }
+	          )
+	        )
       }
-    }
+      syncComposerReservedSpace()
+	    }
+
+	    async function revealPastedTextAttachment(item) {
+	      const text = item.text || (item.file && typeof item.file.text === "function"
+	        ? await item.file.text()
+	        : "")
+	      if (!text) return
+	      insertTextIntoPrompt(text)
+	      revokeAttachmentPreview(item)
+	      pendingAttachments = pendingAttachments.filter((attachment) => attachment.id !== item.id)
+	      renderAttachmentList()
+	      resizePrompt()
+	      updateControls()
+	      els.prompt.focus()
+	    }
+
+	    function insertTextIntoPrompt(text) {
+	      const value = String(text || "")
+	      const start = Number.isFinite(els.prompt.selectionStart)
+	        ? els.prompt.selectionStart
+	        : els.prompt.value.length
+	      const end = Number.isFinite(els.prompt.selectionEnd)
+	        ? els.prompt.selectionEnd
+	        : start
+	      els.prompt.setRangeText(value, start, end, "end")
+	    }
 
     function renderQueuedRunList() {
       const runs = activeQueuedRuns()
@@ -928,6 +1661,7 @@ export const codexAppClientScript = `    const els = {
       for (const run of runs) {
         els.queuedRunList.appendChild(createQueuedRunNode(run))
       }
+      syncComposerReservedSpace()
     }
 
     function createQueuedRunNode(run) {
@@ -981,13 +1715,15 @@ export const codexAppClientScript = `    const els = {
       for (const item of pendingAttachments) {
         const buffer = await item.file.arrayBuffer()
         files.push({
-          dataBase64: arrayBufferToBase64(buffer),
-          lastModified: item.file.lastModified || 0,
-          name: item.file.name || "attachment",
-          previewDataUrl: await createAttachmentPreviewDataUrl(item.file),
-          size: item.file.size || buffer.byteLength,
-          type: item.file.type || "",
-        })
+	          dataBase64: arrayBufferToBase64(buffer),
+	          lastModified: item.file.lastModified || 0,
+	          name: item.file.name || "attachment",
+	          previewText: item.previewText || "",
+	          previewDataUrl: await createAttachmentPreviewDataUrl(item.file),
+	          size: item.file.size || buffer.byteLength,
+	          source: item.source || "",
+	          type: item.file.type || "",
+	        })
       }
       return files
     }
@@ -998,20 +1734,72 @@ export const codexAppClientScript = `    const els = {
 
       return USER_ATTACHMENT_MESSAGE_PREFIX + "\\n" + JSON.stringify({
         attachments: attachments.map((item) => ({
-          name: item.name || "attachment",
-          previewDataUrl: item.previewDataUrl || "",
-          size: item.size || 0,
-          type: item.type || "",
-        })),
+	          name: item.name || "attachment",
+	          previewDataUrl: item.previewDataUrl || "",
+	          previewText: item.previewText || "",
+	          size: item.size || 0,
+	          source: item.source || "",
+	          type: item.type || "",
+	        })),
         text: text || "请查看附件。",
       })
     }
 
-    function createAttachmentPreviewCard(attachment, onRemove) {
-      const card = document.createElement("div")
-      card.className = "attachment-preview-card"
+	    function createAttachmentPreviewCard(attachment, actions) {
+	      const onRemove =
+	        typeof actions === "function" ? actions : actions && actions.onRemove
+	      const onReveal = actions && typeof actions === "object" ? actions.onReveal : null
+	      const card = document.createElement("div")
+	      card.className = "attachment-preview-card"
 
-      const preview = document.createElement("div")
+	      if (attachment.source === "pasted_text") {
+	        card.classList.add("paste-text-card")
+
+	        const icon = document.createElement("div")
+	        icon.className = "paste-text-icon"
+	        icon.setAttribute("aria-hidden", "true")
+	        icon.textContent = "TXT"
+
+	        const body = document.createElement("div")
+	        body.className = "paste-text-body"
+
+	        const title = document.createElement("div")
+	        title.className = "paste-text-title"
+	        title.textContent = attachment.previewText || attachment.name || "粘贴文本"
+	        title.title = title.textContent
+	        body.appendChild(title)
+
+	        if (onReveal) {
+	          const reveal = document.createElement("button")
+	          reveal.className = "paste-text-reveal"
+	          reveal.type = "button"
+	          reveal.textContent = "在文本框中显示 ›"
+	          reveal.addEventListener("click", onReveal)
+	          body.appendChild(reveal)
+	        } else {
+	          const meta = document.createElement("div")
+	          meta.className = "paste-text-meta"
+	          meta.textContent = attachmentCaptionText(attachment)
+	          body.appendChild(meta)
+	        }
+
+	        card.appendChild(icon)
+	        card.appendChild(body)
+
+	        if (onRemove) {
+	          const remove = document.createElement("button")
+	          remove.className = "attachment-preview-remove"
+	          remove.type = "button"
+	          remove.textContent = "×"
+	          remove.setAttribute("aria-label", "移除粘贴文本")
+	          remove.addEventListener("click", onRemove)
+	          card.appendChild(remove)
+	        }
+
+	        return card
+	      }
+	
+	      const preview = document.createElement("div")
       preview.className = "attachment-preview"
       const previewUrl = attachment.previewDataUrl || attachment.previewUrl || ""
       if (previewUrl) {
@@ -1754,13 +2542,15 @@ export const codexAppClientScript = `    const els = {
 
     function normalizeRenderedAttachment(value) {
       if (!value || typeof value !== "object") return null
-      return {
-        name: compactText(value.name || "attachment"),
-        previewDataUrl: String(value.previewDataUrl || ""),
-        size: Number(value.size) || 0,
-        type: String(value.type || ""),
-      }
-    }
+	      return {
+	        name: compactText(value.name || "attachment"),
+	        previewDataUrl: String(value.previewDataUrl || ""),
+	        previewText: shortenInline(compactText(value.previewText || ""), PASTE_ATTACHMENT_PREVIEW_CHARS),
+	        size: Number(value.size) || 0,
+	        source: String(value.source || ""),
+	        type: String(value.type || ""),
+	      }
+	    }
 
     function withAttachmentPreviewUrl(attachment) {
       if (attachment.previewDataUrl || attachment.previewUrl) return attachment
@@ -1839,14 +2629,14 @@ export const codexAppClientScript = `    const els = {
 	      header.appendChild(status)
 	      wrapper.appendChild(header)
 
-	      const grid = document.createElement("div")
-	      grid.className = "multi-task-grid"
-	      for (const task of Array.isArray(run.tasks) ? run.tasks : []) {
-	        grid.appendChild(renderMultiAgentTask(task))
-	      }
-	      wrapper.appendChild(grid)
-	      els.messages.appendChild(wrapper)
-	    }
+      const grid = document.createElement("div")
+      grid.className = "multi-task-grid"
+      for (const task of Array.isArray(run.tasks) ? run.tasks : []) {
+        grid.appendChild(renderMultiAgentTask(task))
+      }
+      wrapper.appendChild(grid)
+      els.messages.appendChild(wrapper)
+    }
 
 	    function renderMultiAgentTask(task) {
 	      const card = document.createElement("div")
@@ -1860,18 +2650,28 @@ export const codexAppClientScript = `    const els = {
 	      const status = document.createElement("div")
 	      status.className = "multi-task-status " + String(task.status || "").toLowerCase()
 	      status.textContent = task.status || "-"
-	      top.appendChild(title)
-	      top.appendChild(status)
-	      card.appendChild(top)
+      top.appendChild(title)
+      top.appendChild(status)
+      if (task.status === "RUNNING") {
+        const cancel = document.createElement("button")
+        cancel.type = "button"
+        cancel.className = "multi-task-cancel"
+        cancel.textContent = "取消"
+        cancel.addEventListener("click", () => void cancelMultiAgentTask(task.id))
+        top.appendChild(cancel)
+      }
+      card.appendChild(top)
 
-	      const model = document.createElement("div")
-	      model.className = "multi-task-model"
-	      model.textContent = [
-	        task.id || "",
-	        task.modelLabel || "",
-	        task.durationMs ? formatDuration(task.durationMs) : "",
-	      ].filter(Boolean).join(" · ")
-	      card.appendChild(model)
+      const model = document.createElement("div")
+      model.className = "multi-task-model"
+      model.textContent = [
+        task.id || "",
+        task.agentName || "",
+        task.accessMode === "write" ? "write" : "read-only",
+        task.modelLabel || "",
+        task.durationMs ? formatDuration(task.durationMs) : "",
+      ].filter(Boolean).join(" · ")
+      card.appendChild(model)
 
 	      const deps = document.createElement("div")
 	      deps.className = "multi-task-deps"
@@ -1879,18 +2679,160 @@ export const codexAppClientScript = `    const els = {
 	        task.dependsOn && task.dependsOn.length
 	          ? "depends: " + task.dependsOn.join(", ")
 	          : "depends: none"
-	      card.appendChild(deps)
+      card.appendChild(deps)
 
-	      const outputText = task.errorMessage || task.resultText || task.prompt || ""
-	      if (outputText) {
-	        const output = document.createElement("div")
-	        output.className = "multi-task-output"
-	        output.textContent = compactTaskOutput(outputText)
-	        card.appendChild(output)
-	      }
+      if (Array.isArray(task.changedFiles) && task.changedFiles.length > 0) {
+        const files = document.createElement("div")
+        files.className = "multi-task-deps"
+        files.textContent = "changed: " + task.changedFiles.slice(0, 8).join(", ")
+        card.appendChild(files)
+      }
 
-	      return card
-	    }
+      if (task.status === "PENDING" || task.status === "RUNNING") {
+        card.appendChild(renderMultiTaskSteeringForm(task))
+      }
+
+      const usageText = task.usage
+        ? [
+            task.usage.inputTokens ? "input " + task.usage.inputTokens : "",
+            task.usage.outputTokens ? "output " + task.usage.outputTokens : "",
+          ].filter(Boolean).join(" · ")
+        : ""
+      const toolUsageText = formatMultiAgentToolUsage(task.toolUsage)
+      const steeringText = formatMultiAgentSteering(task.steering)
+      if (
+        task.prompt ||
+        task.resultText ||
+        task.errorMessage ||
+        usageText ||
+        toolUsageText ||
+        steeringText
+      ) {
+        const details = document.createElement("details")
+        details.className = "multi-task-details"
+        const summary = document.createElement("summary")
+        summary.textContent = "详情"
+        details.appendChild(summary)
+        if (steeringText) {
+          details.appendChild(renderMultiTaskDetail("Steering", steeringText))
+        }
+        if (task.prompt) {
+          details.appendChild(renderMultiTaskDetail("Prompt", task.prompt))
+        }
+        if (task.resultText) {
+          details.appendChild(renderMultiTaskDetail("输出", task.resultText))
+        }
+        if (task.errorMessage) {
+          details.appendChild(renderMultiTaskDetail("错误", task.errorMessage, true))
+        }
+        if (toolUsageText) {
+          details.appendChild(renderMultiTaskDetail("Tools", toolUsageText))
+        }
+        if (usageText) {
+          details.appendChild(renderMultiTaskDetail("Tokens", usageText))
+        }
+        card.appendChild(details)
+      }
+
+      return card
+    }
+
+    function renderMultiTaskSteeringForm(task) {
+      const form = document.createElement("form")
+      form.className = "multi-task-steering"
+      const input = document.createElement("input")
+      input.type = "text"
+      input.placeholder = task.status === "PENDING" ? "追加执行指导" : "记录运行中指导"
+      input.autocomplete = "off"
+      const button = document.createElement("button")
+      button.type = "submit"
+      button.textContent = "发送"
+      form.appendChild(input)
+      form.appendChild(button)
+      form.addEventListener("submit", (event) => {
+        event.preventDefault()
+        const note = input.value.trim()
+        if (!note) return
+        input.value = ""
+        void steerMultiAgentTask(task.id, note)
+      })
+      return form
+    }
+
+    function formatMultiAgentToolUsage(toolUsage) {
+      if (!Array.isArray(toolUsage) || toolUsage.length === 0) return ""
+      return toolUsage
+        .slice(-12)
+        .map((item) => {
+          const parts = [
+            "[" + (item.status || "tool") + "] " + (item.name || "tool"),
+            item.params ? "params: " + item.params : "",
+            item.result ? "result: " + item.result : "",
+          ].filter(Boolean)
+          return parts.join("\\n")
+        })
+        .join("\\n\\n")
+    }
+
+    function formatMultiAgentSteering(steering) {
+      if (!Array.isArray(steering) || steering.length === 0) return ""
+      return steering
+        .slice(-8)
+        .map((item) => {
+          const status = item.appliedToPrompt ? "已进入 prompt" : "运行中记录"
+          return "[" + status + "] " + (item.text || "")
+        })
+        .join("\\n\\n")
+    }
+
+    function renderMultiTaskDetail(label, text, error) {
+      const section = document.createElement("div")
+      section.className = "multi-task-detail" + (error ? " error" : "")
+      const title = document.createElement("div")
+      title.className = "multi-task-detail-label"
+      title.textContent = label
+      const body = document.createElement("pre")
+      body.className = "multi-task-detail-body"
+      body.textContent = compactTaskOutput(text)
+      section.appendChild(title)
+      section.appendChild(body)
+      return section
+    }
+
+    async function cancelMultiAgentTask(taskId) {
+      if (!state.activeSessionId || !taskId) return
+      try {
+        const result = await postJson("/api/multi-agent/task/cancel", {
+          sessionId: state.activeSessionId,
+          taskId,
+        })
+        appendMeta("[多 Agent] " + (result.message || "已请求取消子任务。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      }
+    }
+
+    async function steerMultiAgentTask(taskId, note) {
+      if (!state.activeSessionId || !taskId || !note) return
+      try {
+        const result = await postJson("/api/multi-agent/task/steer", {
+          note,
+          sessionId: state.activeSessionId,
+          taskId,
+        })
+        if (result.state) {
+          updateMultiAgentRun(result.state, state.activeSessionId)
+          publishWindowSync({
+            kind: "multi_state",
+            sessionId: state.activeSessionId,
+            state: result.state,
+          })
+        }
+        appendMeta("[多 Agent] " + (result.message || "已记录子 Agent 指导。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      }
+    }
 
 	    function compactTaskOutput(text) {
 	      const value = String(text || "").trim()
@@ -3645,13 +4587,40 @@ export const codexAppClientScript = `    const els = {
     }
 
     function setReviewMode(mode) {
-      reviewMode = mode === "browser" ? "browser" : "changes"
+      reviewMode = normalizeReviewMode(mode)
       const browser = reviewMode === "browser"
-      els.reviewWorkspace.hidden = browser
+      const artifacts = reviewMode === "artifacts"
+      const terminal = reviewMode === "terminal"
+      const extensions = reviewMode === "extensions"
+      const memory = reviewMode === "memory"
+      const automations = reviewMode === "automations"
+      els.reviewWorkspace.hidden = browser || artifacts || terminal || extensions || memory || automations
       els.browserWorkspace.hidden = !browser
-      els.changesSummary.hidden = browser
-      els.changesTab.classList.toggle("active", !browser)
+      els.artifactsWorkspace.hidden = !artifacts
+      els.terminalWorkspace.hidden = !terminal
+      els.extensionsWorkspace.hidden = !extensions
+      els.memoryWorkspace.hidden = !memory
+      els.automationsWorkspace.hidden = !automations
+      els.changesSummary.hidden = browser || artifacts || terminal || extensions || memory || automations
+      els.changesTab.classList.toggle(
+        "active",
+        !browser && !artifacts && !terminal && !extensions && !memory && !automations
+      )
       els.browserTab.classList.toggle("active", browser)
+      els.artifactsTab.classList.toggle("active", artifacts)
+      els.terminalTab.classList.toggle("active", terminal)
+      els.extensionsTab.classList.toggle("active", extensions)
+      els.memoryTab.classList.toggle("active", memory)
+      els.automationsTab.classList.toggle("active", automations)
+      if (terminal) void refreshTerminalList()
+      if (browser && els.browserInspection.childElementCount === 0) {
+        renderBrowserInspection(latestBrowserInspection)
+      }
+      if (extensions) void refreshExtensions()
+      if (memory) void refreshMemory()
+      if (automations) void refreshAutomations()
+      persistReviewPanelPrefs()
+      updateControls()
     }
 
     function openBrowserPreview(url) {
@@ -3661,19 +4630,174 @@ export const codexAppClientScript = `    const els = {
       els.browserFrame.src = normalized
       browserDraftPoint = null
       browserComments = []
+      latestBrowserInspection = null
+      renderBrowserInspection()
       renderBrowserComments()
       setReviewMode("browser")
       updateControls()
     }
 
+    async function previewArtifact() {
+      if (!state.activeSessionId || artifactBusy) return
+      const artifactPath = els.artifactPath.value.trim()
+      if (!artifactPath) return
+      artifactBusy = true
+      updateControls()
+      renderArtifactPreview({ loading: true })
+      try {
+        const url =
+          "/api/artifacts/preview?sessionId=" +
+          encodeURIComponent(state.activeSessionId) +
+          "&path=" +
+          encodeURIComponent(artifactPath)
+        const response = await fetch(url)
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "产物预览失败")
+        renderArtifactPreview(result)
+      } catch (error) {
+        renderArtifactPreview({ error: error.message || String(error) })
+      } finally {
+        artifactBusy = false
+        updateControls()
+      }
+    }
+
+    function renderArtifactPreview(artifact) {
+      els.artifactPreview.textContent = ""
+      if (!artifact || artifact.loading) {
+        const message = document.createElement("div")
+        message.textContent = artifact && artifact.loading ? "正在预览..." : "输入工作区内文件路径。"
+        els.artifactPreview.appendChild(message)
+        return
+      }
+      if (artifact.error) {
+        const error = document.createElement("div")
+        error.className = "artifact-error"
+        error.textContent = artifact.error
+        els.artifactPreview.appendChild(error)
+        return
+      }
+
+      const meta = document.createElement("div")
+      meta.className = "artifact-meta"
+      ;[
+        artifact.path,
+        artifact.kind,
+        artifact.contentType,
+        formatBytes(artifact.size),
+        artifact.truncated ? "已截断" : "",
+      ].filter(Boolean).forEach((item) => {
+        const span = document.createElement("span")
+        span.textContent = item
+        meta.appendChild(span)
+      })
+      els.artifactPreview.appendChild(meta)
+
+      if (artifact.kind === "image" && artifact.previewUrl) {
+        const image = document.createElement("img")
+        image.src = artifact.previewUrl
+        image.alt = artifact.name || artifact.path || "artifact"
+        els.artifactPreview.appendChild(image)
+        return
+      }
+      if (artifact.kind === "pdf" && artifact.previewUrl) {
+        const frame = document.createElement("iframe")
+        frame.src = artifact.previewUrl
+        frame.title = artifact.name || artifact.path || "PDF 预览"
+        els.artifactPreview.appendChild(frame)
+        return
+      }
+      if (artifact.kind === "csv" && Array.isArray(artifact.rows)) {
+        const table = document.createElement("table")
+        const body = document.createElement("tbody")
+        for (const row of artifact.rows) {
+          const tr = document.createElement("tr")
+          for (const cell of row) {
+            const td = document.createElement("td")
+            td.textContent = cell
+            tr.appendChild(td)
+          }
+          body.appendChild(tr)
+        }
+        table.appendChild(body)
+        els.artifactPreview.appendChild(table)
+        return
+      }
+
+      const pre = document.createElement("pre")
+      pre.textContent = artifact.textPreview || "此类型暂不支持内联预览。"
+      els.artifactPreview.appendChild(pre)
+    }
+
     function normalizeBrowserUrl(value) {
       const raw = String(value || "").trim()
       if (!raw) return ""
-      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw
       if (/^(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?(?:\\/|$)/.test(raw)) {
         return "http://" + raw
       }
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw
       return "https://" + raw
+    }
+
+    function browserViewport() {
+      const rect = els.browserStage.getBoundingClientRect()
+      return {
+        height: Math.max(240, Math.round(rect.height || 720)),
+        width: Math.max(320, Math.round(rect.width || 1280)),
+      }
+    }
+
+    async function inspectBrowserPage() {
+      if (!state.activeSessionId) return
+      const url = normalizeBrowserUrl(els.browserUrl.value || els.browserFrame.src)
+      if (!url) return
+
+      els.browserInspectBtn.disabled = true
+      els.browserInspectBtn.textContent = "检查中"
+      renderBrowserInspection({ loading: true, url })
+      try {
+        const result = await postJson("/api/browser/inspect", {
+          sessionId: state.activeSessionId,
+          url,
+          viewport: browserViewport(),
+        })
+        applyState(result)
+        latestBrowserInspection = result.inspection || null
+        renderBrowserInspection(latestBrowserInspection)
+      } catch (error) {
+        latestBrowserInspection = null
+        renderBrowserInspection({ error: error.message || String(error), url })
+      } finally {
+        els.browserInspectBtn.textContent = "检查"
+        updateControls()
+      }
+    }
+
+    async function enablePlaywrightMcp() {
+      if (!state.activeSessionId) return
+      els.browserMcpBtn.disabled = true
+      els.browserMcpBtn.textContent = "启用中"
+      try {
+        const result = await postJson("/api/browser/playwright-mcp", {
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        const target = result.playwrightMcp && result.playwrightMcp.configPath
+          ? result.playwrightMcp.configPath
+          : ".coding-agent/extensions.json"
+        renderBrowserInspection({
+          info: "已写入 Playwright MCP 配置：" + target + "。下一次 agent 运行会加载 browser tools。",
+          url: els.browserFrame.src || normalizeBrowserUrl(els.browserUrl.value),
+        })
+      } catch (error) {
+        renderBrowserInspection({
+          error: error.message || String(error),
+          url: els.browserFrame.src || normalizeBrowserUrl(els.browserUrl.value),
+        })
+      } finally {
+        els.browserMcpBtn.textContent = "启用 MCP"
+        updateControls()
+      }
     }
 
     function setBrowserAnnotating(enabled) {
@@ -3704,8 +4828,15 @@ export const codexAppClientScript = `    const els = {
       const comment = {
         id: ++browserCommentId,
         point: browserDraftPoint,
+        screenshot:
+          latestBrowserInspection &&
+          latestBrowserInspection.url === url &&
+          latestBrowserInspection.screenshot
+            ? latestBrowserInspection.screenshot
+            : null,
         text,
         url,
+        viewport: browserViewport(),
       }
       browserComments.push(comment)
       browserDraftPoint = null
@@ -3722,10 +4853,161 @@ export const codexAppClientScript = `    const els = {
         : ""
       const block = [
         "浏览器视觉反馈：" + comment.url + point,
+        "视口：" + comment.viewport.width + "x" + comment.viewport.height,
+        comment.screenshot ? "截图：" + comment.screenshot.relativePath : "",
         comment.text,
-      ].join("\\n")
+      ].filter(Boolean).join("\\n")
+      appendPromptBlock(block)
+    }
+
+    function appendPromptBlock(block) {
       els.prompt.value = [els.prompt.value.trim(), block].filter(Boolean).join("\\n\\n")
       els.prompt.focus()
+      updateControls()
+    }
+
+    function renderBrowserInspection(inspection) {
+      els.browserInspection.textContent = ""
+      if (!inspection) {
+        const empty = document.createElement("div")
+        empty.className = "browser-inspection-empty"
+        empty.textContent = "检查 localhost 或 workspace 内 file 页面后，结果会自动带入下一次 agent 请求。"
+        els.browserInspection.appendChild(empty)
+        return
+      }
+
+      if (inspection.loading || inspection.error || inspection.info) {
+        const box = document.createElement("div")
+        box.className =
+          "browser-inspection-message" +
+          (inspection.error ? " error" : inspection.loading ? " loading" : "")
+        box.textContent = inspection.error || inspection.info || "正在检查 " + inspection.url
+        els.browserInspection.appendChild(box)
+        return
+      }
+
+      const header = document.createElement("div")
+      header.className = "browser-inspection-header"
+      const title = document.createElement("strong")
+      title.textContent =
+        inspection.dom && inspection.dom.title ? inspection.dom.title : inspection.url
+      const meta = document.createElement("span")
+      meta.textContent = [
+        inspection.status ? "HTTP " + inspection.status : "file",
+        inspection.viewport
+          ? inspection.viewport.width + "x" + inspection.viewport.height
+          : "",
+      ].filter(Boolean).join(" · ")
+      header.appendChild(title)
+      header.appendChild(meta)
+      els.browserInspection.appendChild(header)
+
+      if (inspection.screenshot && inspection.screenshot.previewUrl) {
+        const image = document.createElement("img")
+        image.className = "browser-inspection-shot"
+        image.src = inspection.screenshot.previewUrl
+        image.alt = "页面截图"
+        els.browserInspection.appendChild(image)
+      }
+
+      const facts = []
+      if (inspection.dom && inspection.dom.description) {
+        facts.push("描述：" + inspection.dom.description)
+      }
+      if (inspection.dom && inspection.dom.headings && inspection.dom.headings.length > 0) {
+        facts.push("标题：" + inspection.dom.headings.slice(0, 4).join(" / "))
+      }
+      if (inspection.resourceIssues && inspection.resourceIssues.length > 0) {
+        facts.push(
+          "资源问题：" +
+            inspection.resourceIssues
+              .slice(0, 5)
+              .map((issue) => issue.message)
+              .join("；")
+        )
+      }
+      if (inspection.warnings && inspection.warnings.length > 0) {
+        facts.push("提示：" + inspection.warnings.slice(0, 3).join("；"))
+      }
+      for (const fact of facts) {
+        const item = document.createElement("div")
+        item.className = "browser-inspection-fact"
+        item.textContent = fact
+        els.browserInspection.appendChild(item)
+      }
+      appendBrowserResourceChecks(inspection.resourceChecks || [])
+    }
+
+    function appendBrowserResourceChecks(resourceChecks) {
+      if (!Array.isArray(resourceChecks) || resourceChecks.length === 0) return
+      const section = document.createElement("div")
+      section.className = "browser-resource-checks"
+      const header = document.createElement("strong")
+      header.textContent = formatBrowserResourceSummary(resourceChecks)
+      section.appendChild(header)
+      const maxDuration = Math.max(
+        1,
+        ...resourceChecks.map((check) =>
+          typeof check.durationMs === "number" ? check.durationMs : 0
+        )
+      )
+      for (const check of resourceChecks.slice(0, 12)) {
+        const row = document.createElement("div")
+        row.className = "browser-resource-row " + (check.type || "ok")
+        const status = document.createElement("span")
+        status.className = "browser-resource-status"
+        status.textContent = [
+          check.kind || "resource",
+          check.status || check.type || "",
+        ].filter(Boolean).join(" ")
+        const url = document.createElement("span")
+        url.className = "browser-resource-url"
+        url.textContent = check.url || ""
+        const bar = document.createElement("span")
+        const duration = typeof check.durationMs === "number" ? check.durationMs : 0
+        bar.className = "browser-resource-waterfall"
+        bar.style.setProperty(
+          "--resource-duration-ratio",
+          String(Math.max(0.04, Math.min(1, duration / maxDuration)))
+        )
+        const meta = document.createElement("span")
+        meta.className = "browser-resource-meta"
+        meta.textContent = [
+          typeof check.durationMs === "number" ? check.durationMs + "ms" : "",
+          typeof check.contentLength === "number" ? formatBytes(check.contentLength) : "",
+          check.contentType || "",
+          check.error || "",
+        ].filter(Boolean).join(" · ")
+        row.appendChild(status)
+        row.appendChild(url)
+        row.appendChild(bar)
+        row.appendChild(meta)
+        section.appendChild(row)
+      }
+      els.browserInspection.appendChild(section)
+    }
+
+    function formatBrowserResourceSummary(resourceChecks) {
+      const total = resourceChecks.length
+      const issues = resourceChecks.filter((check) => check.type && check.type !== "ok").length
+      const durations = resourceChecks
+        .map((check) => (typeof check.durationMs === "number" ? check.durationMs : 0))
+        .filter((value) => value > 0)
+      const maxDuration = durations.length ? Math.max(...durations) : 0
+      return [
+        "Static network waterfall",
+        total + " resources",
+        String(total - issues) + " ok",
+        issues ? String(issues) + " issue" : "",
+        maxDuration ? "max " + maxDuration + "ms" : "",
+      ].filter(Boolean).join(" · ")
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes) || 0
+      if (value < 1024) return String(value) + " B"
+      if (value < 1024 * 1024) return Math.round(value / 1024) + " KB"
+      return (Math.round((value / (1024 * 1024)) * 10) / 10) + " MB"
     }
 
     function renderBrowserComments() {
@@ -3853,6 +5135,7 @@ export const codexAppClientScript = `    const els = {
         label.className = "review-summary-text"
         label.textContent = changes.message || "当前没有代码变更。"
         els.changesSummary.appendChild(label)
+        appendGitStateSummary(changes)
         return
       }
 
@@ -3870,6 +5153,16 @@ export const codexAppClientScript = `    const els = {
       els.changesSummary.appendChild(label)
       els.changesSummary.appendChild(additions)
       els.changesSummary.appendChild(deletions)
+      appendGitStateSummary(changes)
+    }
+
+    function appendGitStateSummary(changes) {
+      const gitState = changes.git || {}
+      if (!gitState.available || !gitState.message) return
+      const label = document.createElement("span")
+      label.className = "git-state-summary"
+      label.textContent = gitState.message
+      els.changesSummary.appendChild(label)
     }
 
     function renderChangeDiffs(files) {
@@ -3921,6 +5214,10 @@ export const codexAppClientScript = `    const els = {
         }
 
         article.appendChild(header)
+        article.appendChild(renderGitFileActions(file))
+        if (file.path === activeDiffCommentPath) {
+          article.appendChild(renderDiffCommentForm(file))
+        }
 
         const diffLines = Array.isArray(file.diffLines) ? file.diffLines : []
         if (diffLines.length === 0) {
@@ -3932,7 +5229,7 @@ export const codexAppClientScript = `    const els = {
           const lines = document.createElement("div")
           lines.className = "diff-lines"
           for (const line of diffLines) {
-            lines.appendChild(renderDiffLine(line))
+            lines.appendChild(renderDiffLine(file, line))
           }
           if (file.diffTruncated) {
             const truncated = document.createElement("div")
@@ -3954,7 +5251,117 @@ export const codexAppClientScript = `    const els = {
       }
     }
 
-    function renderDiffLine(line) {
+    function renderGitFileActions(file) {
+      const row = document.createElement("div")
+      row.className = "diff-file-actions"
+
+      const flags = []
+      if (file.staged) flags.push("已暂存")
+      if (file.unstaged || file.untracked) flags.push("未暂存")
+      const stateLabel = document.createElement("span")
+      stateLabel.className = "diff-file-state"
+      stateLabel.textContent = flags.length > 0 ? flags.join(" / ") : "无工作区差异"
+      row.appendChild(stateLabel)
+
+      const activeBusy = isActiveSessionRunning()
+      const stageBtn = createGitFileActionButton(
+        "暂存",
+        "stage",
+        file.path,
+        gitBusy || activeBusy || !(file.unstaged || file.untracked)
+      )
+      const unstageBtn = createGitFileActionButton(
+        "取消暂存",
+        "unstage",
+        file.path,
+        gitBusy || activeBusy || !file.staged
+      )
+      const revertBtn = createGitFileActionButton(
+        "撤销文件",
+        "revert",
+        file.path,
+        gitBusy || activeBusy || !file.path,
+        "danger"
+      )
+      const commentBtn = createDiffCommentButton(file.path, activeBusy)
+      row.appendChild(stageBtn)
+      row.appendChild(unstageBtn)
+      row.appendChild(revertBtn)
+      row.appendChild(commentBtn)
+      return row
+    }
+
+    function createGitFileActionButton(label, action, filePath, disabled, tone) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "git-file-action" + (tone ? " " + tone : "")
+      button.textContent = label
+      button.disabled = Boolean(disabled)
+      button.addEventListener("click", () => runGitFileAction(filePath, action))
+      return button
+    }
+
+    function createDiffCommentButton(filePath, activeBusy) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "git-file-action"
+      button.textContent = activeDiffCommentPath === filePath ? "收起反馈" : "反馈"
+      button.disabled = Boolean(activeBusy || !state.activeSessionId || !filePath)
+      button.addEventListener("click", () => toggleDiffComment(filePath))
+      return button
+    }
+
+    function toggleDiffComment(filePath) {
+      activeDiffCommentPath = activeDiffCommentPath === filePath ? "" : filePath
+      renderChanges(latestChanges)
+      if (activeDiffCommentPath) {
+        const input = document.getElementById(safeDiffCommentId(activeDiffCommentPath))
+        if (input) input.focus()
+      }
+    }
+
+    function renderDiffCommentForm(file) {
+      const form = document.createElement("form")
+      form.className = "diff-comment-form"
+      form.addEventListener("submit", (event) => {
+        event.preventDefault()
+        submitDiffComment(file, textarea.value)
+      })
+
+      const textarea = document.createElement("textarea")
+      textarea.id = safeDiffCommentId(file.path)
+      textarea.placeholder = "记录这个文件需要 agent 继续修改的地方"
+      const actions = document.createElement("div")
+      actions.className = "diff-comment-actions"
+      const cancel = document.createElement("button")
+      cancel.type = "button"
+      cancel.textContent = "取消"
+      cancel.addEventListener("click", () => {
+        activeDiffCommentPath = ""
+        renderChanges(latestChanges)
+      })
+      const submit = document.createElement("button")
+      submit.type = "submit"
+      submit.textContent = "加入输入"
+      actions.appendChild(cancel)
+      actions.appendChild(submit)
+      form.appendChild(textarea)
+      form.appendChild(actions)
+      return form
+    }
+
+    function submitDiffComment(file, text) {
+      const body = String(text || "").trim()
+      if (!body) return
+      appendPromptBlock([
+        "代码审查反馈：" + file.path,
+        body,
+      ].join("\\n"))
+      activeDiffCommentPath = ""
+      renderChanges(latestChanges)
+    }
+
+    function renderDiffLine(file, line) {
       const kind = normalizeDiffKind(line.kind)
       const row = document.createElement("div")
       row.className = "diff-line " + kind
@@ -3967,12 +5374,47 @@ export const codexAppClientScript = `    const els = {
       newNumber.textContent = Number.isFinite(line.newLine) ? String(line.newLine) : ""
       const code = document.createElement("span")
       code.className = "diff-code"
-      code.textContent = line.text || " "
+      if (kind === "hunk" && Number.isInteger(line.hunkIndex)) {
+        code.classList.add("hunk-code")
+        const text = document.createElement("span")
+        text.className = "diff-hunk-text"
+        text.textContent = line.text || " "
+        code.appendChild(text)
+        code.appendChild(renderHunkActions(file, line.hunkIndex))
+      } else {
+        code.textContent = line.text || " "
+      }
 
       row.appendChild(oldNumber)
       row.appendChild(newNumber)
       row.appendChild(code)
       return row
+    }
+
+    function renderHunkActions(file, hunkIndex) {
+      const actions = document.createElement("span")
+      actions.className = "diff-hunk-actions"
+      const activeBusy = isActiveSessionRunning()
+      const disabled =
+        gitBusy ||
+        activeBusy ||
+        !state.activeSessionId ||
+        !file.path ||
+        !file.unstaged ||
+        file.untracked
+      actions.appendChild(createHunkActionButton("暂存块", file.path, hunkIndex, "stage", disabled))
+      actions.appendChild(createHunkActionButton("撤销块", file.path, hunkIndex, "revert", disabled, "danger"))
+      return actions
+    }
+
+    function createHunkActionButton(label, filePath, hunkIndex, action, disabled, tone) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "git-hunk-action" + (tone ? " " + tone : "")
+      button.textContent = label
+      button.disabled = Boolean(disabled)
+      button.addEventListener("click", () => runGitHunkAction(filePath, hunkIndex, action))
+      return button
     }
 
     function normalizeDiffKind(kind) {
@@ -4100,6 +5542,10 @@ export const codexAppClientScript = `    const els = {
       return "change-" + String(filePath || "").replace(/[^a-zA-Z0-9_-]/g, "_")
     }
 
+    function safeDiffCommentId(filePath) {
+      return "diff-comment-" + String(filePath || "").replace(/[^a-zA-Z0-9_-]/g, "_")
+    }
+
     function basename(filePath) {
       const parts = String(filePath || "").split("/")
       return parts[parts.length - 1] || filePath
@@ -4162,7 +5608,1290 @@ export const codexAppClientScript = `    const els = {
       if (buffer.trim()) (onEvent || handleStreamEvent)(JSON.parse(buffer))
     }
 
-	    function handleStreamEvent(payload, sessionId, requestRunId) {
+    async function refreshTerminalList() {
+      if (!state.activeSessionId) {
+        activeTerminalId = ""
+        latestTerminals = []
+        terminalLastLineIds.__active = 0
+        els.terminalOutput.textContent = ""
+        updateTerminalSearch()
+        renderTerminalRunList()
+        updateControls()
+        return
+      }
+
+      const response = await fetch("/api/terminal/list?sessionId=" + encodeURIComponent(state.activeSessionId))
+      const result = await response.json()
+      const terminals = Array.isArray(result.terminals) ? result.terminals : []
+      latestTerminals = terminals
+      renderTerminalRunList()
+      const selected = terminals.find((terminal) => terminal.id === activeTerminalId)
+      const active = selected || terminals.find((terminal) => terminal.status === "running") || terminals[0]
+      if (!active) {
+        activeTerminalId = ""
+        els.terminalOutput.textContent = ""
+        updateTerminalSearch()
+        updateControls()
+        return
+      }
+
+      if (activeTerminalId !== active.id) {
+        activeTerminalId = active.id
+        terminalLastLineIds[activeTerminalId] = 0
+        els.terminalOutput.textContent = ""
+        updateTerminalSearch()
+      }
+      renderTerminalRunList()
+      await pollTerminalOutput()
+    }
+
+    function renderTerminalRunList() {
+      els.terminalRunList.textContent = ""
+      if (!latestTerminals.length) {
+        const empty = document.createElement("div")
+        empty.className = "terminal-run-empty"
+        empty.textContent = "暂无终端记录"
+        els.terminalRunList.appendChild(empty)
+        return
+      }
+
+      for (const terminal of latestTerminals) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.className = "terminal-run-item" + (terminal.id === activeTerminalId ? " active" : "")
+        button.title = terminal.command || terminal.id
+        const status = document.createElement("span")
+        status.className = "terminal-run-status " + (terminal.status || "exited")
+        status.textContent = terminal.status || "exited"
+        const label = document.createElement("span")
+        label.className = "terminal-run-command"
+        label.textContent = terminal.command || terminal.id
+        button.appendChild(status)
+        button.appendChild(label)
+        button.addEventListener("click", () => selectTerminalRun(terminal.id))
+        els.terminalRunList.appendChild(button)
+      }
+    }
+
+    function activeTerminalStatus() {
+      const terminal = latestTerminals.find((item) => item.id === activeTerminalId)
+      return terminal?.status || ""
+    }
+
+    function selectTerminalRun(terminalId) {
+      if (!terminalId || activeTerminalId === terminalId) return
+      activeTerminalId = terminalId
+      terminalLastLineIds[activeTerminalId] = 0
+      els.terminalOutput.textContent = ""
+      updateTerminalSearch()
+      renderTerminalRunList()
+      void pollTerminalOutput()
+      updateControls()
+    }
+
+    async function startTerminalCommand() {
+      const command = els.terminalCommand.value.trim()
+      if (!state.activeSessionId || !command) return
+      try {
+        const result = await postJson("/api/terminal/start", {
+          command,
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        activeTerminalId = result.terminal?.id || ""
+        if (result.terminal) {
+          latestTerminals = [result.terminal, ...latestTerminals.filter((item) => item.id !== result.terminal.id)]
+        }
+        renderTerminalRunList()
+        if (activeTerminalId) terminalLastLineIds[activeTerminalId] = 0
+        els.terminalOutput.textContent = ""
+        updateTerminalSearch()
+        appendMeta("[终端] " + (result.message || "命令已启动。"))
+        setReviewMode("terminal")
+        await pollTerminalOutput()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        updateControls()
+      }
+    }
+
+    async function stopActiveTerminal() {
+      if (!activeTerminalId) return
+      try {
+        const result = await postJson("/api/terminal/stop", {
+          terminalId: activeTerminalId,
+        })
+        applyState(result)
+        if (result.terminal) {
+          latestTerminals = latestTerminals.map((item) =>
+            item.id === result.terminal.id ? result.terminal : item
+          )
+          renderTerminalRunList()
+        }
+        appendMeta("[终端] " + (result.message || "已请求停止。"))
+        await pollTerminalOutput()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        updateControls()
+      }
+    }
+
+    async function sendTerminalInput() {
+      const input = els.terminalInput.value
+      if (!activeTerminalId || activeTerminalStatus() !== "running" || !input.length) return
+      try {
+        const result = await postJson("/api/terminal/input", {
+          input: input.endsWith("\\n") ? input : input + "\\n",
+          terminalId: activeTerminalId,
+        })
+        applyState(result)
+        if (result.terminal) {
+          latestTerminals = latestTerminals.map((item) =>
+            item.id === result.terminal.id ? result.terminal : item
+          )
+          renderTerminalRunList()
+        }
+        els.terminalInput.value = ""
+        appendMeta("[终端] " + (result.message || "输入已发送。"))
+        await pollTerminalOutput()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        updateControls()
+      }
+    }
+
+    async function copyActiveTerminalOutput() {
+      const text = els.terminalOutput.textContent || ""
+      if (!text.trim()) return
+      try {
+        await navigator.clipboard.writeText(text)
+        appendMeta("[终端] 输出已复制。")
+      } catch {
+        appendMeta("[终端] 当前浏览器不允许直接复制，请手动选择输出。", true)
+      }
+    }
+
+    function updateTerminalSearch(options = {}) {
+      const query = els.terminalSearchQuery.value.trim()
+      const rows = Array.from(els.terminalOutput.querySelectorAll(".terminal-line"))
+      let matches = 0
+      let firstMatch = null
+      for (const row of rows) {
+        const body = row.querySelector(".terminal-line-text")
+        if (!body) continue
+        const text = body.dataset.rawText || body.textContent || ""
+        const matched = renderTerminalLineText(body, text, query)
+        row.classList.toggle("search-match", matched)
+        if (matched) {
+          matches += 1
+          if (!firstMatch) firstMatch = row
+        }
+      }
+      els.terminalSearchResult.textContent = query ? String(matches) + " 行" : ""
+      if (options.scrollFirst && firstMatch) {
+        firstMatch.scrollIntoView({ block: "nearest" })
+      }
+    }
+
+    function renderTerminalLineText(body, text, query) {
+      body.textContent = ""
+      const source = terminalDisplayText(text || " ")
+      const needle = query.trim().toLowerCase()
+      if (!needle) {
+        body.textContent = source
+        return false
+      }
+
+      const lower = source.toLowerCase()
+      let index = lower.indexOf(needle)
+      if (index === -1) {
+        body.textContent = source
+        return false
+      }
+
+      let cursor = 0
+      while (index !== -1) {
+        if (index > cursor) {
+          body.appendChild(document.createTextNode(source.slice(cursor, index)))
+        }
+        const mark = document.createElement("mark")
+        mark.textContent = source.slice(index, index + needle.length)
+        body.appendChild(mark)
+        cursor = index + needle.length
+        index = lower.indexOf(needle, cursor)
+      }
+      if (cursor < source.length) {
+        body.appendChild(document.createTextNode(source.slice(cursor)))
+      }
+      return true
+    }
+
+    function terminalDisplayText(text) {
+      return String(text || " ").replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g, "")
+    }
+
+    async function handleSlashCommand(input) {
+      const raw = String(input || "").trim()
+      if (!raw.startsWith("/")) return false
+      const spaceIndex = raw.indexOf(" ")
+      const command = (spaceIndex >= 0 ? raw.slice(1, spaceIndex) : raw.slice(1)).toLowerCase()
+      const rest = spaceIndex >= 0 ? raw.slice(spaceIndex + 1).trim() : ""
+
+      if (command === "help" || command === "?") {
+        appendMeta(
+          [
+            "[命令] 可用 slash commands:",
+            "/status 刷新状态和变更",
+            "/review 打开审查",
+            "/terminal [命令] 打开终端并填入命令",
+            "/browser [URL] 打开浏览器预览",
+            "/artifacts [路径] 预览工作区产物",
+            "/history [关键词] 搜索 prompt 历史",
+            "/memory 查看用户和项目记忆",
+            "/memory panel 打开记忆面板",
+            "/memory set <内容> 保存项目记忆",
+            "/memory user set <内容> 保存用户记忆",
+            "/memory search <关键词> 搜索记忆",
+            "/extensions 打开扩展",
+            "/automations 打开自动化",
+            "/permission read_only|auto|full_access 切换权限模式",
+          ].join("\\n")
+        )
+        return true
+      }
+
+      if (command === "status") {
+        await refreshStatus()
+        await refreshChanges()
+        appendMeta("[命令] 状态已刷新。权限模式：" + (state.permissionMode || "full_access"))
+        return true
+      }
+
+      if (command === "review") {
+        setReviewPanelHidden(false)
+        setReviewMode("changes")
+        await refreshChanges()
+        appendMeta("[命令] 已打开审查。")
+        return true
+      }
+
+      if (command === "terminal" || command === "term") {
+        setReviewPanelHidden(false)
+        setReviewMode("terminal")
+        if (rest) {
+          els.terminalCommand.value = rest
+          appendMeta("[命令] 已填入终端命令，确认后点击运行。")
+        } else {
+          appendMeta("[命令] 已打开终端。")
+        }
+        updateControls()
+        return true
+      }
+
+      if (command === "browser") {
+        setReviewPanelHidden(false)
+        if (rest) {
+          openBrowserPreview(rest)
+          appendMeta("[命令] 已打开浏览器预览。")
+        } else {
+          setReviewMode("browser")
+          appendMeta("[命令] 已打开浏览器面板。")
+        }
+        return true
+      }
+
+      if (command === "artifacts" || command === "artifact") {
+        setReviewPanelHidden(false)
+        setReviewMode("artifacts")
+        if (rest) {
+          els.artifactPath.value = rest
+          await previewArtifact()
+        } else {
+          appendMeta("[命令] 已打开产物面板。")
+        }
+        updateControls()
+        return true
+      }
+
+      if (command === "history") {
+        const matches = matchingPromptHistory(rest)
+        appendMeta(
+          matches.length
+            ? ["[命令] Prompt history:", ...matches.map((item, index) => String(index + 1) + ". " + shortenInline(item, 140))].join("\\n")
+            : "[命令] 没有匹配的 prompt 历史。"
+        )
+        return true
+      }
+
+      if (command === "memory") {
+        await handleMemorySlashCommand(rest)
+        return true
+      }
+
+      if (command === "extensions") {
+        setReviewPanelHidden(false)
+        setReviewMode("extensions")
+        appendMeta("[命令] 已打开扩展。")
+        return true
+      }
+
+      if (command === "automations") {
+        setReviewPanelHidden(false)
+        setReviewMode("automations")
+        appendMeta("[命令] 已打开自动化。")
+        return true
+      }
+
+      if (command === "permission") {
+        const nextMode = rest.replace(/-/g, "_")
+        if (
+          nextMode !== "read_only" &&
+          nextMode !== "auto" &&
+          nextMode !== "full_access"
+        ) {
+          appendMeta("[命令] 权限模式只能是 read_only、auto 或 full_access。", true)
+          return true
+        }
+        await setPermissionMode(nextMode)
+        return true
+      }
+
+      appendMeta("[命令] 未知命令：" + raw + "。输入 /help 查看可用命令。", true)
+      return true
+    }
+
+    async function handleMemorySlashCommand(rest) {
+      if (!state.activeSessionId) {
+        appendMeta("[命令] 请先选择会话。", true)
+        return
+      }
+
+      const text = String(rest || "").trim()
+      const parsed = parseMemorySlashArgs(text)
+      if (parsed.action === "panel") {
+        setReviewPanelHidden(false)
+        setReviewMode("memory")
+        appendMeta("[命令] 已打开记忆面板。")
+        return
+      }
+      if (parsed.action === "search") {
+        if (!parsed.memory) {
+          appendMeta("[记忆] 请输入搜索关键词。", true)
+          return
+        }
+        const response = await fetch(
+          "/api/memory/search?sessionId=" +
+            encodeURIComponent(state.activeSessionId) +
+            "&query=" +
+            encodeURIComponent(parsed.memory)
+        )
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "搜索记忆失败")
+        const results = Array.isArray(result.results) ? result.results : []
+        appendMeta(
+          results.length
+            ? [
+                "[记忆] 搜索结果：",
+                ...results.map(
+                  (item) =>
+                    item.scope +
+                    ":" +
+                    item.line +
+                    " " +
+                    shortenInline(item.text || "", 160)
+                ),
+              ].join("\\n")
+            : "[记忆] 没有匹配结果。"
+        )
+        return
+      }
+
+      if (parsed.action === "clear") {
+        const result = await deleteJson("/api/memory", {
+          scope: parsed.scope,
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        if (reviewMode === "memory") {
+          memoryDirty = false
+          await refreshMemory({ resetDirty: true })
+        }
+        appendMeta("[记忆] " + (result.message || "记忆已清空。"))
+        return
+      }
+
+      if (parsed.action === "set") {
+        if (!parsed.memory) {
+          appendMeta("[记忆] 请输入要保存的记忆内容。", true)
+          return
+        }
+        const result = await postJson("/api/memory", {
+          memory: parsed.memory,
+          scope: parsed.scope,
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        if (reviewMode === "memory") {
+          memoryDirty = false
+          await refreshMemory({ resetDirty: true })
+        }
+        appendMeta("[记忆] " + (result.message || "记忆已保存。"))
+        return
+      }
+
+      const response = await fetch(
+        "/api/memory?sessionId=" +
+          encodeURIComponent(state.activeSessionId) +
+          "&scope=" +
+          encodeURIComponent(parsed.scope)
+      )
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || "读取记忆失败")
+      const memories = Array.isArray(result.memories) ? result.memories : []
+      const nonEmpty = memories.filter((item) => String(item.memory || "").trim())
+      appendMeta(nonEmpty.length ? formatMemoryList(nonEmpty) : emptyMemoryMessage(parsed.scope))
+    }
+
+    function parseMemorySlashArgs(text) {
+      const trimmed = String(text || "").trim()
+      const parts = trimmed.split(/\\s+/).filter(Boolean)
+      let scope = "all"
+      let index = 0
+      if (parts[0] === "user" || parts[0] === "project") {
+        scope = parts[0]
+        index = 1
+      }
+
+      const actionToken = parts[index] || ""
+      if (actionToken === "set") {
+        return {
+          action: "set",
+          memory: parts.slice(index + 1).join(" ").trim(),
+          scope: scope === "all" ? "project" : scope,
+        }
+      }
+      if (actionToken === "clear") {
+        return {
+          action: "clear",
+          memory: "",
+          scope: scope === "all" ? "project" : scope,
+        }
+      }
+      if (actionToken === "search") {
+        return {
+          action: "search",
+          memory: parts.slice(index + 1).join(" ").trim(),
+          scope,
+        }
+      }
+      if (actionToken === "panel") {
+        return { action: "panel", memory: "", scope }
+      }
+      return { action: "view", memory: "", scope }
+    }
+
+    function formatMemoryList(memories) {
+      return [
+        "[记忆] 当前记忆：",
+        ...memories.map(
+          (item) =>
+            "[" +
+            item.scope +
+            "] " +
+            item.path +
+            "\\n" +
+            shortenInline(item.memory || "", 900)
+        ),
+      ].join("\\n\\n")
+    }
+
+    function emptyMemoryMessage(scope) {
+      if (scope === "user") return "[记忆] 当前没有用户记忆。使用 /memory user set <内容> 保存。"
+      if (scope === "project") return "[记忆] 当前项目没有项目记忆。使用 /memory set <内容> 保存。"
+      return "[记忆] 当前没有用户或项目记忆。"
+    }
+
+	    async function pollTerminalOutput() {
+      if (!activeTerminalId) return
+      if (terminalPollTimer) {
+        window.clearTimeout(terminalPollTimer)
+        terminalPollTimer = 0
+      }
+      const since = terminalLastLineIds[activeTerminalId] || 0
+      const response = await fetch(
+        "/api/terminal/output?terminalId=" +
+          encodeURIComponent(activeTerminalId) +
+          "&since=" +
+          encodeURIComponent(String(since))
+      )
+      if (!response.ok) {
+        activeTerminalId = ""
+        updateControls()
+        return
+      }
+      const result = await response.json()
+      const lines = Array.isArray(result.lines) ? result.lines : []
+      for (const line of lines) {
+        appendTerminalOutputLine(line)
+        terminalLastLineIds[activeTerminalId] = Math.max(
+          terminalLastLineIds[activeTerminalId] || 0,
+          Number(line.id) || 0
+        )
+      }
+      const terminal = result.terminal || {}
+      if (terminal.id) {
+        latestTerminals = latestTerminals.map((item) =>
+          item.id === terminal.id ? terminal : item
+        )
+        renderTerminalRunList()
+      }
+      if (terminal.status === "running") {
+        terminalPollTimer = window.setTimeout(() => void pollTerminalOutput(), 1000)
+      }
+      updateControls()
+    }
+
+    function appendTerminalOutputLine(line) {
+      const row = document.createElement("div")
+      row.className = "terminal-line " + (line.stream || "system")
+      const label = document.createElement("span")
+      label.className = "terminal-line-stream"
+      label.textContent = line.stream || "system"
+      const body = document.createElement("span")
+      body.className = "terminal-line-text"
+      body.dataset.rawText = line.text || " "
+      renderTerminalLineText(body, body.dataset.rawText, els.terminalSearchQuery.value.trim())
+      row.appendChild(label)
+      row.appendChild(body)
+      els.terminalOutput.appendChild(row)
+      els.terminalOutput.scrollTop = els.terminalOutput.scrollHeight
+      updateTerminalSearch()
+    }
+
+    async function refreshExtensions() {
+      if (!state.activeSessionId) {
+        latestExtensions = null
+        renderExtensions()
+        updateControls()
+        return
+      }
+
+      try {
+        const response = await fetch(
+          "/api/extensions?sessionId=" + encodeURIComponent(state.activeSessionId)
+        )
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "扩展列表加载失败")
+        latestExtensions = result.extensions || null
+        renderExtensions()
+      } catch (error) {
+        latestExtensions = { error: error.message || String(error) }
+        renderExtensions()
+      } finally {
+        updateControls()
+      }
+    }
+
+    async function toggleExtension(kind, item) {
+      if (!state.activeSessionId || extensionBusy) return
+      extensionBusy = true
+      updateControls()
+      renderExtensions()
+      try {
+        const result = await postJson("/api/extensions/toggle", {
+          enabled: !item.enabled,
+          kind,
+          name: item.label,
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        latestExtensions = result.extensions || null
+        renderExtensions()
+        appendMeta("[扩展] " + (result.message || "扩展状态已更新。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        extensionBusy = false
+        updateControls()
+        renderExtensions()
+      }
+    }
+
+    function renderExtensions() {
+      els.extensionsList.textContent = ""
+      if (!latestExtensions) {
+        els.extensionsConfigPath.textContent = ""
+        const empty = document.createElement("div")
+        empty.className = "extension-empty"
+        empty.textContent = state.activeSessionId
+          ? "点击刷新查看当前 workspace 的 Skills、Plugins、MCP 和 Hooks。"
+          : "请先选择会话。"
+        els.extensionsList.appendChild(empty)
+        return
+      }
+
+      if (latestExtensions.error) {
+        els.extensionsConfigPath.textContent = ""
+        const error = document.createElement("div")
+        error.className = "extension-empty error"
+        error.textContent = latestExtensions.error
+        els.extensionsList.appendChild(error)
+        return
+      }
+
+      els.extensionsConfigPath.textContent = latestExtensions.configPath
+        ? "配置：" + latestExtensions.configPath
+        : ""
+      appendExtensionGroup("Skills", "skill", latestExtensions.skills || [])
+      appendExtensionGroup("Plugins", "plugin", latestExtensions.plugins || [])
+      appendExtensionGroup("MCP", "mcp", latestExtensions.mcpServers || [])
+      appendExtensionGroup("Hooks", "hook", latestExtensions.hooks || [])
+
+      const warnings = Array.isArray(latestExtensions.warnings)
+        ? latestExtensions.warnings
+        : []
+      if (warnings.length > 0) {
+        const warning = document.createElement("div")
+        warning.className = "extension-warning"
+        warning.textContent = warnings.slice(0, 4).join("；")
+        els.extensionsList.appendChild(warning)
+      }
+    }
+
+    function appendExtensionGroup(title, kind, items) {
+      const section = document.createElement("section")
+      section.className = "extension-group"
+      const header = document.createElement("div")
+      header.className = "extension-group-header"
+      header.textContent = title + " · " + items.length
+      section.appendChild(header)
+
+      if (items.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "extension-empty"
+        empty.textContent = "暂无"
+        section.appendChild(empty)
+      }
+
+      for (const item of items) {
+        const row = document.createElement("div")
+        row.className = "extension-row" + (item.enabled === false ? " disabled" : "")
+        const body = document.createElement("div")
+        body.className = "extension-row-body"
+        const name = document.createElement("strong")
+        name.textContent = item.displayName || item.label || "(unnamed)"
+        const meta = document.createElement("span")
+        meta.textContent = [item.description, item.policySummary, item.source, item.path]
+          .filter(Boolean)
+          .join(" · ")
+        body.appendChild(name)
+        if (meta.textContent) body.appendChild(meta)
+        row.appendChild(body)
+
+        if (kind === "skill" || kind === "plugin" || kind === "mcp" || kind === "hook") {
+          const toggle = document.createElement("button")
+          toggle.type = "button"
+          toggle.className = "extension-toggle"
+          toggle.disabled = extensionBusy
+          toggle.textContent = item.enabled === false ? "启用" : "禁用"
+          toggle.addEventListener("click", () => void toggleExtension(kind, item))
+          row.appendChild(toggle)
+        } else {
+          const badge = document.createElement("span")
+          badge.className = "extension-badge"
+          badge.textContent = "只读"
+          row.appendChild(badge)
+        }
+        section.appendChild(row)
+      }
+      els.extensionsList.appendChild(section)
+    }
+
+    async function refreshMemory(options = {}) {
+      if (!state.activeSessionId) {
+        latestMemories = []
+        latestMemoryResults = []
+        latestSessionMemory = null
+        memoryError = ""
+        memoryDirty = false
+        renderMemory()
+        updateControls()
+        return
+      }
+
+      if (memoryDirty && options.confirmDiscard && !window.confirm("放弃未保存的记忆修改并刷新？")) {
+        return
+      }
+
+      memoryBusy = true
+      memoryError = ""
+      updateControls()
+      try {
+        const response = await fetch(
+          "/api/memory?sessionId=" +
+            encodeURIComponent(state.activeSessionId) +
+            "&scope=all"
+        )
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "读取记忆失败")
+        latestMemories = Array.isArray(result.memories) ? result.memories : []
+        const sessionResponse = await fetch(
+          "/api/session-memory?sessionId=" + encodeURIComponent(state.activeSessionId)
+        )
+        const sessionResult = await sessionResponse.json()
+        if (!sessionResponse.ok) throw new Error(sessionResult.error || "读取会话记忆失败")
+        latestSessionMemory = sessionResult.memory || null
+        if (options.resetDirty) memoryDirty = false
+        renderMemory()
+      } catch (error) {
+        memoryError = error.message || String(error)
+        renderMemory()
+      } finally {
+        memoryBusy = false
+        updateControls()
+      }
+    }
+
+    function activeMemoryScope() {
+      return els.memoryScope.value === "user" ? "user" : "project"
+    }
+
+    function activeMemoryRecord() {
+      const scope = activeMemoryScope()
+      return latestMemories.find((item) => item.scope === scope) || {
+        enabled: true,
+        memory: "",
+        path: "",
+        scope,
+      }
+    }
+
+    function renderMemory() {
+      if (!state.activeSessionId) {
+        els.memoryPath.textContent = ""
+        els.memoryEnabled.checked = false
+        els.memoryEditor.value = ""
+        renderStructuredMemoryFields("")
+        renderSessionMemoryPanel()
+        renderMemoryResults("请先选择会话。")
+        return
+      }
+
+      const record = activeMemoryRecord()
+      els.memoryPath.textContent = record.path ? "路径：" + record.path : ""
+      els.memoryEnabled.checked = record.enabled !== false
+      if (!memoryDirty) {
+        els.memoryEditor.value = record.memory || ""
+        renderStructuredMemoryFields(record.memory || "")
+      }
+      renderSessionMemoryPanel()
+      renderMemoryResults()
+    }
+
+    function renderStructuredMemoryFields(markdown) {
+      const structured = parseStructuredMemory(markdown)
+      els.memoryFacts.value = structured.facts.join("\\n")
+      els.memoryPreferences.value = structured.preferences.join("\\n")
+      els.memoryTodos.value = structured.todos.join("\\n")
+    }
+
+    function parseStructuredMemory(markdown) {
+      const sections = {
+        facts: [],
+        preferences: [],
+        todos: [],
+      }
+      let current = ""
+      for (const line of String(markdown || "").split(/\\r?\\n/)) {
+        const heading = line.trim().toLowerCase()
+        if (/^##+\\s*(facts|事实)/.test(heading)) {
+          current = "facts"
+          continue
+        }
+        if (/^##+\\s*(preferences|偏好)/.test(heading)) {
+          current = "preferences"
+          continue
+        }
+        if (/^##+\\s*(todos|待办)/.test(heading)) {
+          current = "todos"
+          continue
+        }
+        if (/^##+\\s+/.test(heading)) {
+          current = ""
+          continue
+        }
+        if (current) {
+          const value = line.replace(/^\\s*[-*]\\s+/, "").trim()
+          if (value) sections[current].push(value)
+        }
+      }
+      return sections
+    }
+
+    function applyStructuredMemory() {
+      const sections = [
+        ["Facts", linesFromTextarea(els.memoryFacts)],
+        ["Preferences", linesFromTextarea(els.memoryPreferences)],
+        ["Todos", linesFromTextarea(els.memoryTodos)],
+      ]
+      els.memoryEditor.value = sections
+        .filter((section) => section[1].length > 0)
+        .map((section) => "## " + section[0] + "\\n" + section[1].map((line) => "- " + line).join("\\n"))
+        .join("\\n\\n")
+      memoryDirty = true
+      updateControls()
+    }
+
+    function linesFromTextarea(textarea) {
+      return String(textarea.value || "")
+        .split(/\\r?\\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+    }
+
+    function renderSessionMemoryPanel() {
+      els.sessionMemoryPanel.textContent = ""
+      if (!state.activeSessionId) return
+
+      const panel = document.createElement("details")
+      panel.className = "session-memory-details"
+      const summary = document.createElement("summary")
+      const metrics = latestSessionMemory && latestSessionMemory.metrics
+        ? latestSessionMemory.metrics
+        : null
+      summary.textContent = metrics
+        ? "会话记忆 · " +
+          [
+            "summary " + metrics.summaryChars,
+            "quality " + metrics.summaryQuality,
+            "compactions " + metrics.compactionCount,
+          ].join(" · ")
+        : "会话记忆 · 暂无数据"
+      panel.appendChild(summary)
+
+      if (metrics) {
+        const grid = document.createElement("div")
+        grid.className = "session-memory-grid"
+        const rows = [
+          ["摘要质量", metrics.summaryQuality],
+          ["摘要字符", metrics.summaryChars],
+          ["Recent entries", metrics.recentEntryCount],
+          ["Transcript entries", metrics.transcriptEntryCount],
+          ["Compactions", metrics.compactionCount],
+          ["Prompt snapshots", metrics.promptSnapshotCount],
+          ["Latest prompt chars", metrics.latestPromptTotalChars],
+        ]
+        for (const row of rows) {
+          const label = document.createElement("span")
+          label.textContent = row[0]
+          const value = document.createElement("strong")
+          value.textContent = String(row[1])
+          grid.appendChild(label)
+          grid.appendChild(value)
+        }
+        panel.appendChild(grid)
+      }
+
+      const compactions = latestSessionMemory && Array.isArray(latestSessionMemory.compactions)
+        ? latestSessionMemory.compactions
+        : []
+      if (compactions.length > 0) {
+        const list = document.createElement("div")
+        list.className = "session-memory-list"
+        for (const item of compactions.slice().reverse()) {
+          const row = document.createElement("div")
+          row.textContent = [
+            formatTime(item.createdAt),
+            item.status,
+            item.reason,
+            "input " + item.inputChars,
+            "summary " + item.summaryChars,
+            item.errorMessage || "",
+          ].filter(Boolean).join(" · ")
+          list.appendChild(row)
+        }
+        panel.appendChild(list)
+      }
+
+      if (latestSessionMemory && latestSessionMemory.summaryText) {
+        const body = document.createElement("pre")
+        body.className = "session-memory-summary"
+        body.textContent = compactTaskOutput(latestSessionMemory.summaryText)
+        panel.appendChild(body)
+      }
+
+      els.sessionMemoryPanel.appendChild(panel)
+    }
+
+    function renderMemoryResults(emptyText) {
+      els.memoryResults.textContent = ""
+      if (memoryError) {
+        const row = document.createElement("div")
+        row.className = "memory-result error"
+        row.textContent = memoryError
+        els.memoryResults.appendChild(row)
+        return
+      }
+
+      if (latestMemoryResults.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "memory-result"
+        empty.textContent = emptyText || "搜索结果会显示在这里。"
+        els.memoryResults.appendChild(empty)
+        return
+      }
+
+      for (const item of latestMemoryResults) {
+        const row = document.createElement("div")
+        row.className = "memory-result"
+        const title = document.createElement("strong")
+        title.textContent =
+          (item.scope === "user" ? "用户" : "项目") +
+          " · line " +
+          String(item.line || 1)
+        const body = document.createElement("span")
+        body.textContent = shortenInline(item.text || "", 220)
+        const path = document.createElement("small")
+        path.textContent = item.path || ""
+        row.appendChild(title)
+        row.appendChild(body)
+        if (path.textContent) row.appendChild(path)
+        els.memoryResults.appendChild(row)
+      }
+    }
+
+    async function saveActiveMemory() {
+      if (!state.activeSessionId || memoryBusy) return
+      memoryBusy = true
+      updateControls()
+      try {
+        const result = await postJson("/api/memory", {
+          memory: els.memoryEditor.value,
+          scope: activeMemoryScope(),
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        memoryDirty = false
+        await refreshMemory({ resetDirty: true })
+        appendMeta("[记忆] " + (result.message || "记忆已保存。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        memoryBusy = false
+        updateControls()
+      }
+    }
+
+    async function clearActiveMemory() {
+      if (!state.activeSessionId || memoryBusy) return
+      const label = activeMemoryScope() === "user" ? "用户记忆" : "项目记忆"
+      if (!window.confirm("确定清空" + label + "？")) return
+      memoryBusy = true
+      updateControls()
+      try {
+        const result = await deleteJson("/api/memory", {
+          scope: activeMemoryScope(),
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        memoryDirty = false
+        await refreshMemory({ resetDirty: true })
+        appendMeta("[记忆] " + (result.message || "记忆已清空。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        memoryBusy = false
+        updateControls()
+      }
+    }
+
+    async function setActiveMemoryEnabled(enabled) {
+      if (!state.activeSessionId || memoryBusy) return
+      memoryBusy = true
+      updateControls()
+      try {
+        const result = await postJson("/api/memory/settings", {
+          enabled,
+          scope: activeMemoryScope(),
+          sessionId: state.activeSessionId,
+        })
+        applyState(result)
+        await refreshMemory()
+        appendMeta("[记忆] " + (result.message || "记忆注入状态已更新。"))
+      } catch (error) {
+        els.memoryEnabled.checked = !enabled
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        memoryBusy = false
+        updateControls()
+      }
+    }
+
+    async function searchMemory() {
+      if (!state.activeSessionId || memoryBusy) return
+      const query = els.memorySearchQuery.value.trim()
+      if (!query) return
+      memoryBusy = true
+      memoryError = ""
+      updateControls()
+      try {
+        const response = await fetch(
+          "/api/memory/search?sessionId=" +
+            encodeURIComponent(state.activeSessionId) +
+            "&query=" +
+            encodeURIComponent(query)
+        )
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "搜索记忆失败")
+        latestMemoryResults = Array.isArray(result.results) ? result.results : []
+        renderMemory()
+        appendMeta("[记忆] 搜索完成：" + latestMemoryResults.length + " 条。")
+      } catch (error) {
+        memoryError = error.message || String(error)
+        renderMemory()
+      } finally {
+        memoryBusy = false
+        updateControls()
+      }
+    }
+
+    async function refreshAutomations() {
+      try {
+        const response = await fetch("/api/automations")
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "自动化列表加载失败")
+        latestAutomations = Array.isArray(result.automations) ? result.automations : []
+      } catch (error) {
+        latestAutomations = [{ error: error.message || String(error) }]
+      }
+      renderAutomations()
+      updateControls()
+    }
+
+    function updateAutomationScheduleEditor() {
+      const cronMode = els.automationScheduleMode.value === "cron"
+      els.automationInterval.hidden = cronMode
+      els.automationCron.hidden = !cronMode
+      if (!cronMode) {
+        els.automationCron.value = ""
+      }
+      updateControls()
+      scheduleAutomationPreview()
+    }
+
+    function scheduleAutomationPreview() {
+      if (automationPreviewTimer) {
+        window.clearTimeout(automationPreviewTimer)
+      }
+      automationPreviewTimer = window.setTimeout(() => {
+        automationPreviewTimer = null
+        void refreshAutomationSchedulePreview()
+      }, 250)
+    }
+
+    async function refreshAutomationSchedulePreview() {
+      const cronMode = els.automationScheduleMode.value === "cron"
+      const cron = cronMode ? els.automationCron.value.trim() : ""
+      const intervalMinutes = Number(els.automationInterval.value) || 60
+      els.automationSchedulePreview.classList.remove("error")
+      if (cronMode && !cron) {
+        els.automationSchedulePreview.textContent = ""
+        return
+      }
+
+      try {
+        const result = await postJson("/api/automations/preview", {
+          cron,
+          intervalMinutes,
+        })
+        els.automationSchedulePreview.textContent = result.nextRunAt
+          ? "下次 " + formatTime(result.nextRunAt)
+          : ""
+      } catch (error) {
+        els.automationSchedulePreview.classList.add("error")
+        els.automationSchedulePreview.textContent = error.message || String(error)
+      }
+    }
+
+    async function createAutomation() {
+      if (!state.activeSessionId || automationBusy) return
+      const prompt = els.automationPrompt.value.trim()
+      if (!prompt) return
+      const cronMode = els.automationScheduleMode.value === "cron"
+      automationBusy = true
+      updateControls()
+      try {
+        const result = await postJson("/api/automations", {
+          cron: cronMode ? els.automationCron.value.trim() : "",
+          intervalMinutes: Number(els.automationInterval.value) || 60,
+          permissionMode: els.automationPermission.value,
+          prompt,
+          sessionId: state.activeSessionId,
+          title: els.automationTitle.value.trim() || "自动化",
+        })
+        applyState(result)
+        latestAutomations = Array.isArray(result.automations) ? result.automations : []
+        els.automationCron.value = ""
+        els.automationPrompt.value = ""
+        els.automationScheduleMode.value = "interval"
+        updateAutomationScheduleEditor()
+        renderAutomations()
+        appendMeta("[自动化] " + (result.message || "已创建自动化。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        automationBusy = false
+        updateControls()
+      }
+    }
+
+    async function automationAction(path, body) {
+      automationBusy = true
+      updateControls()
+      try {
+        const result = path === "/api/automations"
+          ? await deleteJson(path, body)
+          : await postJson(path, body)
+        applyState(result)
+        latestAutomations = Array.isArray(result.automations) ? result.automations : []
+        renderAutomations()
+        appendMeta("[自动化] " + (result.message || "自动化已更新。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        automationBusy = false
+        updateControls()
+      }
+    }
+
+    function renderAutomations() {
+      els.automationsList.textContent = ""
+      if (!latestAutomations.length) {
+        const empty = document.createElement("div")
+        empty.className = "automation-empty"
+        empty.textContent = "暂无自动化。创建后会在服务运行期间按计划触发当前会话。"
+        els.automationsList.appendChild(empty)
+        return
+      }
+
+      for (const automation of latestAutomations) {
+        if (automation.error) {
+          const error = document.createElement("div")
+          error.className = "automation-empty error"
+          error.textContent = automation.error
+          els.automationsList.appendChild(error)
+          continue
+        }
+        const row = document.createElement("div")
+        row.className = "automation-row" + (automation.enabled ? "" : " disabled")
+        const body = document.createElement("div")
+        body.className = "automation-row-body"
+        const title = document.createElement("strong")
+        title.textContent = automation.title || "自动化"
+        const meta = document.createElement("span")
+        meta.textContent = [
+          automation.enabled ? "enabled" : "paused",
+          automation.permissionMode,
+          automation.workspaceMode === "worktree" ? "Worktree" : "Local",
+          automation.cron ? "cron " + automation.cron : "每 " + automation.intervalMinutes + " 分钟",
+          automation.nextRunAt ? "下次 " + formatTime(automation.nextRunAt) : "",
+          automation.lastStatus ? "上次 " + automation.lastStatus : "",
+          automation.failureCount ? "失败 " + automation.failureCount : "",
+        ].filter(Boolean).join(" · ")
+        body.appendChild(title)
+        body.appendChild(meta)
+        if (automation.lastError) {
+          const error = document.createElement("span")
+          error.className = "automation-error"
+          error.textContent = automation.lastError
+          body.appendChild(error)
+        }
+        row.appendChild(body)
+
+        const actions = document.createElement("div")
+        actions.className = "automation-actions"
+        const run = document.createElement("button")
+        run.type = "button"
+        run.textContent = "运行"
+        run.disabled = automationBusy
+        run.addEventListener("click", () =>
+          void automationAction("/api/automations/run", { automationId: automation.id })
+        )
+        const toggle = document.createElement("button")
+        toggle.type = "button"
+        toggle.textContent = automation.enabled ? "暂停" : "启用"
+        toggle.disabled = automationBusy
+        toggle.addEventListener("click", () =>
+          void automationAction("/api/automations/toggle", {
+            automationId: automation.id,
+            enabled: !automation.enabled,
+          })
+        )
+        const remove = document.createElement("button")
+        remove.type = "button"
+        remove.textContent = "删除"
+        remove.disabled = automationBusy
+        remove.addEventListener("click", () => {
+          if (window.confirm("删除这个自动化？")) {
+            void automationAction("/api/automations", { automationId: automation.id })
+          }
+        })
+        actions.appendChild(run)
+        actions.appendChild(toggle)
+        actions.appendChild(remove)
+        row.appendChild(actions)
+        const history = renderAutomationHistory(automation)
+        if (history) row.appendChild(history)
+        els.automationsList.appendChild(row)
+      }
+    }
+
+    function renderAutomationHistory(automation) {
+      const history = Array.isArray(automation.history) ? automation.history.slice(0, 5) : []
+      if (history.length === 0) return null
+
+      const details = document.createElement("details")
+      details.className = "automation-history"
+      const summary = document.createElement("summary")
+      summary.textContent = "运行历史"
+      details.appendChild(summary)
+      for (const item of history) {
+        const row = document.createElement("div")
+        row.className = "automation-history-row " + (item.status || "")
+        const duration = item.finishedAt && item.startedAt
+          ? formatDuration(item.finishedAt - item.startedAt)
+          : ""
+        row.textContent = [
+          item.status || "-",
+          item.startedAt ? formatTime(item.startedAt) : "",
+          duration,
+          item.error || "",
+        ].filter(Boolean).join(" · ")
+        details.appendChild(row)
+      }
+      return details
+    }
+
+    function formatTime(value) {
+      try {
+        return new Date(value).toLocaleString()
+      } catch {
+        return ""
+      }
+    }
+
+	    function handleStreamEvent(payload, sessionId, requestRunId, fromWindowSync) {
+      if (!fromWindowSync) {
+        publishWindowSync({
+          kind: "stream_event",
+          payload,
+          requestRunId: requestRunId || "",
+          sessionId: sessionId || state.activeSessionId || "",
+        })
+      }
 	      if (payload.type === "agent") {
 	        renderAgentEvent(payload.event, sessionId)
 	        return
@@ -4278,6 +7007,21 @@ export const codexAppClientScript = `    const els = {
         await refreshChanges()
       } catch (error) {
         appendMeta("[错误] " + error.message, true)
+      }
+    }
+
+    async function updateSessionFlags(sessionId, flags) {
+      try {
+        const result = await postJson("/api/sessions/flags", {
+          sessionId,
+          ...flags,
+        })
+        applyState(result)
+        setToast(els.projectToast, result.message || "会话已更新。")
+        await refreshChanges()
+      } catch (error) {
+        if (state.activeSessionId) appendMeta("[错误] " + error.message, true)
+        else setToast(els.projectToast, error.message, true)
       }
     }
 
@@ -4403,6 +7147,181 @@ export const codexAppClientScript = `    const els = {
       }
     }
 
+    async function runGitFileAction(filePath, action) {
+      const sessionId = state.activeSessionId
+      if (!sessionId || gitBusy || !filePath) return
+      const label = gitFileActionLabel(action)
+      if (
+        action === "revert" &&
+        !window.confirm("撤销文件「" + filePath + "」到本轮对话前的状态？")
+      ) {
+        return
+      }
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/file", {
+          action,
+          path: filePath,
+          sessionId,
+        })
+        applyState(result)
+        appendMeta("[Git] " + (result.message || label + "已完成。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    async function runGitHunkAction(filePath, hunkIndex, action) {
+      const sessionId = state.activeSessionId
+      if (!sessionId || gitBusy || !filePath || !Number.isInteger(hunkIndex)) return
+      const label = action === "stage" ? "暂存 hunk" : "撤销 hunk"
+      if (
+        action === "revert" &&
+        !window.confirm("撤销文件「" + filePath + "」中的这个 hunk？")
+      ) {
+        return
+      }
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/hunk", {
+          action,
+          hunkIndex,
+          path: filePath,
+          sessionId,
+        })
+        applyState(result)
+        appendMeta("[Git] " + (result.message || label + "已完成。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    async function commitStagedChangesFromUi() {
+      const sessionId = state.activeSessionId
+      const message = els.gitCommitMessage.value.trim()
+      if (!sessionId || gitBusy || !message) return
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/commit", {
+          message,
+          sessionId,
+        })
+        els.gitCommitMessage.value = ""
+        applyState(result)
+        appendMeta("[Git] " + (result.message || "提交已完成。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    async function suggestCommitMessageFromUi() {
+      const sessionId = state.activeSessionId
+      if (!sessionId || gitBusy) return
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/commit-message", { sessionId })
+        if (result.suggestion) {
+          els.gitCommitMessage.value = result.suggestion
+        }
+        applyState(result)
+        appendMeta("[Git] " + (result.message || "已生成提交信息。"))
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    async function pushCurrentBranchFromUi() {
+      const sessionId = state.activeSessionId
+      const gitState = latestChanges.git || {}
+      if (!sessionId || gitBusy || !gitState.canPush) return
+      const label = gitState.branch
+        ? "推送当前分支「" + gitState.branch + "」到远端？"
+        : "推送当前分支到远端？"
+      if (!window.confirm(label)) return
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/push", { sessionId })
+        applyState(result)
+        appendMeta("[Git] " + (result.message || "推送已完成。"))
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    async function createPullRequestFromUi() {
+      const sessionId = state.activeSessionId
+      const gitState = latestChanges.git || {}
+      if (!sessionId || gitBusy || !gitState.canCreatePullRequest) return
+      const label = gitState.branch
+        ? "创建当前分支「" + gitState.branch + "」的 Draft PR？"
+        : "创建当前分支的 Draft PR？"
+      if (!window.confirm(label)) return
+
+      gitBusy = true
+      updateControls()
+      renderChanges(latestChanges)
+      try {
+        const result = await postJson("/api/git/pr", { sessionId })
+        applyState(result)
+        appendMeta("[Git] " + (result.message || "Draft PR 已创建。"))
+        if (result.pullRequest && result.pullRequest.url) {
+          window.open(result.pullRequest.url, "_blank", "noopener")
+        }
+        await refreshChanges()
+      } catch (error) {
+        appendMeta("[错误] " + error.message, true)
+      } finally {
+        gitBusy = false
+        updateControls()
+        renderChanges(latestChanges)
+      }
+    }
+
+    function gitFileActionLabel(action) {
+      if (action === "stage") return "暂存"
+      if (action === "unstage") return "取消暂存"
+      return "撤销文件"
+    }
+
     async function cancelActiveSession() {
       const cancelSessionId = state.activeSessionId
       if (!cancelSessionId || !isSessionActivelyRunning(cancelSessionId)) return
@@ -4415,28 +7334,69 @@ export const codexAppClientScript = `    const els = {
       }
     }
 
+    async function setPermissionMode(permissionMode) {
+      const previousMode = state.permissionMode || "full_access"
+      try {
+        const result = await postJson("/api/permissions", { permissionMode })
+        applyState(result)
+        appendMeta("[权限] " + (result.message || "权限模式已更新。"))
+      } catch (error) {
+        renderPermissionModeControl(previousMode)
+        appendMeta("[错误] " + error.message, true)
+      }
+    }
+
     els.openProjectForm.addEventListener("submit", (event) => {
       event.preventDefault()
       void pickProject()
     })
 
     els.openProjectBtn.addEventListener("click", pickProject)
-    els.attachmentBtn.addEventListener("click", () => {
-      if (!els.attachmentBtn.disabled) els.attachmentInput.click()
-    })
-    els.attachmentInput.addEventListener("change", () => {
+	    els.attachmentBtn.addEventListener("click", () => {
+	      if (!els.attachmentBtn.disabled) els.attachmentInput.click()
+	    })
+	    els.attachmentInput.addEventListener("change", () => {
       addAttachmentFiles(els.attachmentInput.files)
       els.attachmentInput.value = ""
     })
 
     els.newSessionBtn.addEventListener("click", () => createNewSession("local"))
     els.newWorktreeSessionBtn.addEventListener("click", () => createNewSession("worktree"))
+    els.permissionModeButton.addEventListener("click", () => {
+      if (!els.permissionModeButton.disabled) {
+        setPermissionModeMenuOpen(els.permissionModeMenu.hidden)
+      }
+    })
+    els.permissionModeMenu.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null
+      const option = target ? target.closest("[data-permission-mode]") : null
+      if (option && !option.disabled) {
+        const nextMode = option.dataset.permissionMode
+        setPermissionModeMenuOpen(false)
+        if (nextMode && nextMode !== (state.permissionMode || "full_access")) {
+          void setPermissionMode(nextMode)
+        }
+      }
+    })
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Node) || !els.permissionModePicker.contains(event.target)) {
+        setPermissionModeMenuOpen(false)
+      }
+    })
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") setPermissionModeMenuOpen(false)
+    })
+    els.themeModeSelect.addEventListener("change", () => {
+      setThemeMode(els.themeModeSelect.value)
+    })
+    els.popoutBtn.addEventListener("click", openConversationPopout)
     els.moveWorkspaceBtn.addEventListener("click", moveActiveSessionWorkspace)
     els.discardSessionBtn.addEventListener("click", discardActiveSessionChanges)
     els.guideModeBtn.addEventListener("click", () => {
       if (!els.guideModeBtn.disabled) setGuideMode(!guideMode)
     })
     els.messages.addEventListener("scroll", updateMessagesAutoFollow, { passive: true })
+    els.composer.addEventListener("wheel", forwardComposerWheelToMessages, { passive: false })
     els.scrollBottomBtn.addEventListener("click", () => scrollMessagesToBottom("smooth"))
     els.changesFloat.addEventListener("click", () => {
       setReviewPanelHidden(false)
@@ -4444,11 +7404,108 @@ export const codexAppClientScript = `    const els = {
 
     els.changesTab.addEventListener("click", () => setReviewMode("changes"))
     els.browserTab.addEventListener("click", () => setReviewMode("browser"))
+    els.artifactsTab.addEventListener("click", () => setReviewMode("artifacts"))
+    els.terminalTab.addEventListener("click", () => setReviewMode("terminal"))
+    els.extensionsTab.addEventListener("click", () => setReviewMode("extensions"))
+    els.memoryTab.addEventListener("click", () => setReviewMode("memory"))
+    els.automationsTab.addEventListener("click", () => setReviewMode("automations"))
+    els.artifactPath.addEventListener("input", updateControls)
+    els.artifactForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void previewArtifact()
+    })
+    els.extensionsRefreshBtn.addEventListener("click", () => {
+      void refreshExtensions()
+    })
+    els.memoryScope.addEventListener("change", () => {
+      memoryDirty = false
+      renderMemory()
+      updateControls()
+    })
+    els.memoryEnabled.addEventListener("change", () => {
+      void setActiveMemoryEnabled(els.memoryEnabled.checked)
+    })
+    els.memoryEditor.addEventListener("input", () => {
+      memoryDirty = true
+      updateControls()
+    })
+    ;[els.memoryFacts, els.memoryPreferences, els.memoryTodos].forEach((input) => {
+      input.addEventListener("input", () => {
+        memoryDirty = true
+        updateControls()
+      })
+    })
+    els.memoryStructuredApplyBtn.addEventListener("click", applyStructuredMemory)
+    els.memoryRefreshBtn.addEventListener("click", () => {
+      void refreshMemory({ confirmDiscard: true, resetDirty: true })
+    })
+    els.memorySaveBtn.addEventListener("click", () => {
+      void saveActiveMemory()
+    })
+    els.memoryClearBtn.addEventListener("click", () => {
+      void clearActiveMemory()
+    })
+    els.memorySearchQuery.addEventListener("input", updateControls)
+    els.memorySearchForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void searchMemory()
+    })
+    els.automationScheduleMode.addEventListener("change", updateAutomationScheduleEditor)
+    els.automationInterval.addEventListener("input", () => {
+      updateControls()
+      scheduleAutomationPreview()
+    })
+    els.automationCron.addEventListener("input", () => {
+      updateControls()
+      scheduleAutomationPreview()
+    })
+    els.automationPrompt.addEventListener("input", updateControls)
+    els.automationForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void createAutomation()
+    })
+    els.terminalCommand.addEventListener("input", updateControls)
+    els.terminalCommand.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault()
+        void startTerminalCommand()
+      }
+    })
+    els.terminalInput.addEventListener("input", updateControls)
+    els.terminalInputForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void sendTerminalInput()
+    })
+    els.terminalSearchQuery.addEventListener("input", () => {
+      updateTerminalSearch({ scrollFirst: true })
+      updateControls()
+    })
+    els.terminalSearchClearBtn.addEventListener("click", () => {
+      els.terminalSearchQuery.value = ""
+      updateTerminalSearch()
+      updateControls()
+    })
+    els.terminalForm.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void startTerminalCommand()
+    })
+    els.terminalStopBtn.addEventListener("click", () => {
+      void stopActiveTerminal()
+    })
+    els.terminalCopyBtn.addEventListener("click", () => {
+      void copyActiveTerminalOutput()
+    })
     els.browserForm.addEventListener("submit", (event) => {
       event.preventDefault()
       openBrowserPreview(els.browserUrl.value)
     })
     els.browserUrl.addEventListener("input", updateControls)
+    els.browserInspectBtn.addEventListener("click", () => {
+      void inspectBrowserPage()
+    })
+    els.browserMcpBtn.addEventListener("click", () => {
+      void enablePlaywrightMcp()
+    })
     els.browserAnnotateBtn.addEventListener("click", () => {
       if (!els.browserAnnotateBtn.disabled) setBrowserAnnotating(!browserAnnotating)
     })
@@ -4522,6 +7579,10 @@ export const codexAppClientScript = `    const els = {
       if (event.key === "Escape") {
         setModelMenuOpen(false)
         setModelParamPopoverOpen(false)
+        if (reviewMode === "terminal" && activeTerminalStatus() === "running") {
+          event.preventDefault()
+          void stopActiveTerminal()
+        }
       }
     })
 
@@ -4531,6 +7592,26 @@ export const codexAppClientScript = `    const els = {
       } catch (error) {
         els.changesSummary.textContent = error.message
       }
+    })
+
+    els.gitCommitMessage.addEventListener("input", updateControls)
+    els.gitCommitMessage.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault()
+        void commitStagedChangesFromUi()
+      }
+    })
+    els.gitCommitBtn.addEventListener("click", () => {
+      void commitStagedChangesFromUi()
+    })
+    els.gitSuggestCommitBtn.addEventListener("click", () => {
+      void suggestCommitMessageFromUi()
+    })
+    els.gitPushBtn.addEventListener("click", () => {
+      void pushCurrentBranchFromUi()
+    })
+    els.gitPrBtn.addEventListener("click", () => {
+      void createPullRequestFromUi()
     })
 
     els.reviewToggleBtn.addEventListener("click", () => {
@@ -4577,6 +7658,20 @@ export const codexAppClientScript = `    const els = {
       const prompt = els.prompt.value.trim()
       const attachmentSnapshot = pendingAttachments.slice()
       if (!state.activeSessionId) return
+      if (prompt.startsWith("/") && attachmentSnapshot.length === 0) {
+        try {
+          const handled = await handleSlashCommand(prompt)
+          if (handled) {
+            els.prompt.value = ""
+            resizePrompt()
+            updateControls()
+            return
+          }
+        } catch (error) {
+          appendMeta("[错误] " + error.message, true)
+          return
+        }
+      }
       if (!prompt && attachmentSnapshot.length === 0) {
         if (isActiveSessionActivelyRunning()) {
           await cancelActiveSession()
@@ -4597,6 +7692,7 @@ export const codexAppClientScript = `    const els = {
       }
 
 	      messagesAutoFollow = true
+      recordPromptHistory(prompt)
       const formattedUserMessage = formatUserMessageWithAttachments(prompt, attachments)
       if (activeAtSubmit) {
         activeQueuedRuns(runSessionId).push({
@@ -4663,15 +7759,35 @@ export const codexAppClientScript = `    const els = {
       resizePrompt()
       updateControls()
     })
-    els.prompt.addEventListener("paste", (event) => {
-      const files = event.clipboardData && event.clipboardData.files
-      if (!files || files.length === 0) return
-
-      event.preventDefault()
-      addAttachmentFiles(files)
-    })
+	    els.prompt.addEventListener("paste", (event) => {
+	      const files = event.clipboardData && event.clipboardData.files
+	      if (files && files.length > 0) {
+	        event.preventDefault()
+	        addAttachmentFiles(files)
+	        return
+	      }
+	
+	      const text = event.clipboardData && event.clipboardData.getData("text/plain")
+	      if (addPastedTextAttachment(text)) {
+	        event.preventDefault()
+	      }
+	    })
     els.authApiKey.addEventListener("input", updateControls)
+    els.sessionSearch.addEventListener("input", renderSidebar)
+    els.sessionShowArchived.addEventListener("change", renderSidebar)
     els.prompt.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowUp" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        if (navigatePromptHistory(-1)) {
+          event.preventDefault()
+          return
+        }
+      }
+      if (event.key === "ArrowDown" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        if (navigatePromptHistory(1)) {
+          event.preventDefault()
+          return
+        }
+      }
       if (
         event.key === "Enter" &&
         !event.shiftKey &&
@@ -4682,8 +7798,19 @@ export const codexAppClientScript = `    const els = {
       }
     })
 
+    applyWindowMode()
+    applyThemeMode()
+    setupWindowSync()
     loadReviewPanelPrefs()
+    setReviewMode(reviewMode)
     resizePrompt()
+    if (els.composerWrap && typeof window.ResizeObserver === "function") {
+      const composerResizeObserver = new window.ResizeObserver(syncComposerReservedSpace)
+      composerResizeObserver.observe(els.composerWrap)
+    }
+    window.addEventListener("resize", syncComposerReservedSpace)
+    syncComposerReservedSpace()
+    updateAutomationScheduleEditor()
 
     async function initializeApp() {
       await refreshStatus()

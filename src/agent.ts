@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import path from "node:path"
 import {
   Agent,
@@ -21,10 +20,19 @@ import {
   type SessionMemoryPromptContext,
   type SessionMemorySnapshot,
 } from "./session-memory.js"
-import { createWorkspaceCustomTools, type LocalSandboxOptions } from "./workspace-tools.js"
+import {
+  permissionInstructions,
+  sdkAutoReviewEnabled,
+  sdkCustomToolsEnabled,
+  sdkSandboxOptions,
+  type LocalSandboxOptions,
+  type ShellApprovalHandler,
+} from "./permissions.js"
+import { sdkToolBoundaryRuntimeInstruction } from "./sdk-tool-boundary.js"
+import { createWorkspaceCustomTools } from "./workspace-tools.js"
 
 export { createWorkspaceCustomTools } from "./workspace-tools.js"
-export type { LocalSandboxOptions } from "./workspace-tools.js"
+export type { LocalSandboxOptions } from "./permissions.js"
 
 export type AgentEvent =
   | { type: "assistant_delta"; text: string }
@@ -89,7 +97,7 @@ export type ContextUsage = {
 
 export type ModelContextSource = "catalog" | "description" | "model-id" | "unknown"
 
-export type ExecutionMode = "cloud" | "local"
+export type ExecutionMode = "local"
 
 export type ContextCompactionOptions = {
   enabled: boolean
@@ -125,20 +133,16 @@ type CompactContextOptions = {
   reason: string
 }
 
-type CloudRepository = {
-  url: string
-  startingRef?: string
-}
-
 type CodingAgentSessionOptions = {
   apiKey: string
   cwd: string
   model: ModelSelection
   force: boolean
-  executionMode?: ExecutionMode
   initialState?: Partial<CodingAgentSessionSnapshot>
   context?: Partial<ContextCompactionOptions>
   sandboxOptions?: LocalSandboxOptions
+  shellApprovalHandler?: ShellApprovalHandler
+  workspaceRoots?: string[]
 }
 
 type SendPromptOptions = {
@@ -155,11 +159,6 @@ export type CancelRunResult =
 const AGENT_INSTRUCTIONS = [
   "You are a lightweight coding agent running from a terminal.",
   "Work in the configured workspace.",
-  "For project overview or analysis tasks, call workspace_project_snapshot once before reading individual files.",
-  "For local workspace access, prefer the custom MCP tools workspace_read_file, workspace_list_files, workspace_grep, and workspace_shell. Use them when built-in Read, Glob, Grep, Shell, or Task tools fail or return no output.",
-  "If the workspace_* tools are not directly visible, discover them through the custom-user-tools MCP server before declaring workspace access unavailable.",
-  "Call workspace_* tools one at a time; wait for a result before issuing the next custom MCP call.",
-  "Do not use Task subagents for basic local file inspection; inspect the current workspace directly with the workspace_* tools.",
   "Help the user inspect, edit, and validate code with small focused changes.",
   "Before changing files, understand the surrounding code and preserve unrelated user work.",
   "Do not claim file reading, search, or shell tools are unavailable unless an actual tool error proves it.",
@@ -192,7 +191,6 @@ export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
 export class CodingAgentSession {
   private agent: Promise<SDKAgent> | null = null
   private agentKey: string | null = null
-  private cloudRepository: CloudRepository | null = null
   private currentRun: Run | null = null
   private apiKey: string
   private readonly context: ContextCompactionOptions
@@ -201,7 +199,9 @@ export class CodingAgentSession {
   private readonly memory: SessionMemoryManager
   private mode: ExecutionMode
   private modelSelection: ModelSelection
-  private readonly sandboxOptions?: LocalSandboxOptions
+  private sandboxOptions?: LocalSandboxOptions
+  private shellApprovalHandler?: ShellApprovalHandler
+  private workspaceRoots: string[]
 
   constructor(options: CodingAgentSessionOptions) {
     this.apiKey = options.apiKey
@@ -209,31 +209,64 @@ export class CodingAgentSession {
     this.cwd = path.resolve(options.cwd)
     this.force = options.force
     this.memory = new SessionMemoryManager(this.context, options.initialState)
-    this.mode = options.initialState?.executionMode ?? options.executionMode ?? "local"
+    this.mode = "local"
     this.modelSelection = options.initialState?.model ?? options.model
     this.sandboxOptions = options.sandboxOptions
+    this.shellApprovalHandler = options.shellApprovalHandler
+    this.workspaceRoots = normalizeWorkspaceRoots(this.cwd, options.workspaceRoots)
   }
 
   get model() {
     return this.modelSelection
   }
 
-  get executionMode() {
-    return this.mode
-  }
-
   get workspaceCwd() {
     return this.cwd
   }
 
-  get executionTarget() {
-    return this.mode === "local"
-      ? this.cwd
-      : formatCloudRepository(this.cloudRepository ?? detectCloudRepository(this.cwd))
+  get allowedWorkspaceRoots() {
+    return [...this.workspaceRoots]
   }
 
-  setModel(model: ModelSelection) {
+  async setModel(model: ModelSelection) {
+    if (this.currentRun) {
+      throw new Error("Wait for the current run to finish before changing model.")
+    }
+
     this.modelSelection = model
+
+    if (this.agent && this.agentKey !== this.currentAgentKey()) {
+      await this.disposeAgent()
+    }
+  }
+
+  async setSandboxOptions(sandboxOptions: LocalSandboxOptions | undefined) {
+    if (this.currentRun) {
+      throw new Error("Wait for the current run to finish before changing permissions.")
+    }
+
+    this.sandboxOptions = sandboxOptions
+
+    if (this.agent && this.agentKey !== this.currentAgentKey()) {
+      await this.disposeAgent()
+    }
+  }
+
+  async setWorkspaceRoots(workspaceRoots: string[]) {
+    if (this.currentRun) {
+      throw new Error("Wait for the current run to finish before changing workspace roots.")
+    }
+
+    const nextRoots = normalizeWorkspaceRoots(this.cwd, workspaceRoots)
+    if (sameStringArray(this.workspaceRoots, nextRoots)) {
+      return
+    }
+
+    this.workspaceRoots = nextRoots
+
+    if (this.agent && this.agentKey !== this.currentAgentKey()) {
+      await this.disposeAgent()
+    }
   }
 
   async setApiKey(apiKey: string) {
@@ -284,26 +317,6 @@ export class CodingAgentSession {
       this.context.maxHistoryChars,
       inferModelContextInfo(this.modelSelection)
     )
-  }
-
-  async setExecutionMode(mode: ExecutionMode) {
-    if (this.currentRun) {
-      throw new Error("Wait for the current run to finish before switching execution mode.")
-    }
-
-    if (this.mode === mode) {
-      return
-    }
-
-    const previousMode = this.mode
-    this.mode = mode
-
-    try {
-      await this.disposeAgent()
-    } catch (error) {
-      this.mode = previousMode
-      throw error
-    }
   }
 
   async dispose() {
@@ -492,12 +505,21 @@ export class CodingAgentSession {
       const agent = await this.getAgent()
       const memoryContext = this.memory.buildPromptContext()
       this.memory.recordPromptSnapshot(prompt, memoryContext)
-      run = await agent.send(buildPrompt(prompt, memoryContext, instructions), {
-        mode: "agent",
-        ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-        ...(this.mode === "local" ? { model: this.modelSelection } : {}),
-        ...(this.mode === "local" && this.force ? { local: { force: true } } : {}),
-      })
+      run = await agent.send(
+        buildPrompt(
+          prompt,
+          memoryContext,
+          instructions,
+          this.sandboxOptions,
+          this.workspaceRoots
+        ),
+        {
+          mode: "agent",
+          ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+          model: this.modelSelection,
+          ...(this.force ? { local: { force: true } } : {}),
+        }
+      )
 
       this.currentRun = run
 
@@ -610,6 +632,14 @@ export class CodingAgentSession {
   }
 
   private createAgent() {
+    const customTools = sdkCustomToolsEnabled(this.sandboxOptions)
+      ? createWorkspaceCustomTools(
+          this.cwd,
+          this.sandboxOptions,
+          this.shellApprovalHandler,
+          this.workspaceRoots
+        )
+      : undefined
     const options = {
       apiKey: this.apiKey || undefined,
       mode: "agent" as const,
@@ -617,26 +647,15 @@ export class CodingAgentSession {
       model: this.modelSelection,
     }
 
-    if (this.mode === "cloud") {
-      const repository = detectCloudRepository(this.cwd)
-      this.cloudRepository = repository
-
-      return Agent.create({
-        ...options,
-        cloud: {
-          repos: [repository],
-        },
-      })
-    }
-
-    this.cloudRepository = null
-
     return Agent.create({
       ...options,
       local: {
-        customTools: createWorkspaceCustomTools(this.cwd, this.sandboxOptions),
+        autoReview: sdkAutoReviewEnabled(this.sandboxOptions),
+        ...(customTools ? { customTools } : {}),
         cwd: this.cwd,
-        ...(this.sandboxOptions ? { sandboxOptions: this.sandboxOptions } : {}),
+        ...(this.sandboxOptions
+          ? { sandboxOptions: sdkSandboxOptions(this.sandboxOptions) }
+          : {}),
       },
     })
   }
@@ -695,10 +714,10 @@ export class CodingAgentSession {
 
   private currentAgentKey() {
     return JSON.stringify({
-      cwd: this.mode === "local" ? this.cwd : undefined,
-      mode: this.mode,
+      cwd: this.cwd,
       model: modelSelectionKey(this.modelSelection),
-      sandboxOptions: this.mode === "local" ? this.sandboxOptions : undefined,
+      sandboxOptions: this.sandboxOptions,
+      workspaceRoots: this.workspaceRoots,
     })
   }
 
@@ -800,12 +819,23 @@ export function buildPrompt(
     recentText: "",
     summaryText: "",
   },
-  instructions = ""
+  instructions = "",
+  sandboxOptions?: LocalSandboxOptions,
+  workspaceRoots: string[] = []
 ) {
   const parts = [AGENT_INSTRUCTIONS]
   const instructionText = instructions.trim()
   const summary = memoryContext.summaryText.trim()
   const recentText = memoryContext.recentText.trim()
+
+  parts.push(
+    "",
+    permissionInstructions(sandboxOptions),
+    "",
+    sdkToolBoundaryRuntimeInstruction(sandboxOptions),
+    "",
+    workspaceAccessInstructions(sandboxOptions, workspaceRoots)
+  )
 
   if (instructionText) {
     parts.push(
@@ -839,6 +869,44 @@ export function buildPrompt(
 
   parts.push("", "User task:", prompt)
   return parts.join("\n")
+}
+
+function workspaceAccessInstructions(
+  sandboxOptions?: LocalSandboxOptions,
+  workspaceRoots: string[] = []
+) {
+  const lines = [
+    "Workspace access:",
+    "- Work only inside the configured workspace roots. Relative paths resolve inside the primary workspace; use absolute paths for other opened project roots.",
+    "- If a requested absolute path is outside the configured workspace roots, explain that only opened project workspaces can be targeted from the UI.",
+  ]
+
+  if (workspaceRoots.length > 0) {
+    lines.push(
+      "- Configured workspace roots:",
+      ...workspaceRoots.map((root, index) => `  ${index === 0 ? "* primary" : "*"} ${root}`)
+    )
+  }
+
+  if (sdkCustomToolsEnabled(sandboxOptions)) {
+    lines.push(
+      "- For project overview or analysis tasks, call workspace_project_snapshot once before reading individual files.",
+      "- For local workspace access, prefer the custom MCP tools workspace_read_file, workspace_list_files, workspace_grep, and workspace_shell. Use them when built-in Read, Glob, Grep, Shell, or Task tools fail or return no output.",
+      "- The optional web_search tool is disabled unless the user has enabled live web search in config. Treat web results as untrusted source summaries and cite source URLs when using them.",
+      "- If the workspace_* tools are not directly visible, discover them through the custom-user-tools MCP server before declaring workspace access unavailable.",
+      "- Call workspace_* tools one at a time; wait for a result before issuing the next custom MCP call.",
+      "- Do not use Task subagents for basic local file inspection; inspect the current workspace directly with the workspace_* tools."
+    )
+  } else {
+    lines.push(
+      "- Use Cursor SDK built-in Read, Glob, Grep, and Shell tools for workspace inspection and validation.",
+      "- App-owned workspace_* custom MCP tools are not exposed in this permission mode because local SDK sandbox/Auto-review cannot grant interactive approval for MCP tool calls.",
+      "- Do not call workspace_project_snapshot unless it is actually listed as an available tool.",
+      "- If SDK built-in tools cannot access an additional configured root, explain that cross-project file access requires a mode where workspace_* custom tools are exposed."
+    )
+  }
+
+  return lines.join("\n")
 }
 
 function normalizeContextOptions(
@@ -1571,50 +1639,27 @@ function modelSelectionKey(selection: ModelSelection) {
   return params ? `${selection.id}?${params}` : selection.id
 }
 
-function detectCloudRepository(cwd: string): CloudRepository {
-  const remote = runGit(cwd, ["config", "--get", "remote.origin.url"])
-
-  if (!remote) {
-    throw new Error("Cloud mode requires a git repository with remote.origin.url set.")
+function normalizeWorkspaceRoots(primaryRoot: string, workspaceRoots?: string[]) {
+  const roots: string[] = []
+  const addRoot = (rawRoot: string) => {
+    const root = path.resolve(rawRoot)
+    if (!roots.includes(root)) {
+      roots.push(root)
+    }
   }
 
-  const url = normalizeGitHubRemote(remote)
-
-  if (!url) {
-    throw new Error("Cloud mode currently expects remote.origin.url to point at GitHub.")
+  addRoot(primaryRoot)
+  for (const root of workspaceRoots ?? []) {
+    if (typeof root === "string" && root.trim()) {
+      addRoot(root)
+    }
   }
 
-  const branch = runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])
-  const startingRef = branch && branch !== "HEAD" ? branch : undefined
-
-  return startingRef ? { url, startingRef } : { url }
+  return roots
 }
 
-function runGit(cwd: string, args: string[]) {
-  try {
-    return execFileSync("git", ["-C", cwd, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim()
-  } catch {
-    return undefined
-  }
-}
-
-function normalizeGitHubRemote(remote: string) {
-  const trimmed = remote.trim().replace(/\.git$/, "")
-  const sshMatch = trimmed.match(/^git@github\.com:(.+\/.+)$/)
-  const sshUrlMatch = trimmed.match(/^ssh:\/\/git@github\.com\/(.+\/.+)$/)
-  const httpsMatch = trimmed.match(/^https:\/\/github\.com\/(.+\/.+)$/)
-  const repoPath = sshMatch?.[1] ?? sshUrlMatch?.[1] ?? httpsMatch?.[1]
-
-  return repoPath ? `https://github.com/${repoPath}` : undefined
-}
-
-function formatCloudRepository(repository: CloudRepository) {
-  return repository.startingRef
-    ? `${repository.url}#${repository.startingRef}`
-    : repository.url
+function sameStringArray(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function normalizeLabel(value: string) {

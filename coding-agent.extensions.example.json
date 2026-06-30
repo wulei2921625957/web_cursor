@@ -1,8 +1,36 @@
 {
+  "browser": {
+    "allow": ["http://localhost:*", "http://127.0.0.1:*", "http://[::1]:*"],
+    "deny": []
+  },
+  "multiAgent": {
+    "agents": [
+      {
+        "name": "Reviewer",
+        "description": "Read-only project inspection and risk review",
+        "permissionMode": "read_only",
+        "instructions": "Inspect the project and report findings without editing files."
+      },
+      {
+        "name": "Implementer",
+        "description": "Scoped implementation work",
+        "permissionMode": "auto",
+        "instructions": "Make focused edits only when the subtask is write-capable."
+      }
+    ]
+  },
   "mcpServers": {
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp"]
+    }
+  },
+  "mcpPolicies": {
+    "playwright": {
+      "allow": ["browser_snapshot", "browser_take_screenshot"],
+      "prompt": ["browser_click", "browser_type", "browser_drag"],
+      "deny": ["browser_install"],
+      "default": "prompt"
     }
   },
   "plugins": [".coding-agent/plugins/example-plugin"],
