@@ -101,6 +101,7 @@ export const codexAppClientScript = `    const els = {
     const streamingMultiRuns = new Map()
     const streamingRunTimers = new Map()
     const streamingThoughts = new Map()
+    const assistantBoundarySessions = new Set()
     const localSessionRunRefs = new Map()
     const persistMessagesTimers = new Map()
     const ASSISTANT_STREAM_FRAME_MS = 32
@@ -127,6 +128,9 @@ export const codexAppClientScript = `    const els = {
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const REVIEW_PANEL_MIN_WIDTH = 320
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 420
+    const READABLE_PARAGRAPH_MIN_CHARS = 180
+    const READABLE_PARAGRAPH_TARGET_CHARS = 110
+    const READABLE_PARAGRAPH_MAX_CHARS = 150
     const MODEL_SWITCH_SESSION_WARNING = "会话中切换模型，或许会有降智影响。是否继续切换？"
     let reviewPanelHidden = false
     let reviewPanelWidth = 0
@@ -1185,19 +1189,14 @@ export const codexAppClientScript = `    const els = {
         return
       }
 
-      let turnActivityGroup = []
-      let turnMessages = []
+      let turnItems = []
       let turnIndex = 0
       const flushTurn = () => {
-        if (turnActivityGroup.length > 0) appendActivityGroup(turnActivityGroup, turnIndex)
-        for (const turnMessage of turnMessages) {
-          appendRenderedMessage(turnMessage)
-        }
-        if (turnActivityGroup.length > 0 || turnMessages.length > 0) {
+        if (turnItems.length > 0) {
+          appendTurnItems(turnItems, turnIndex)
           turnIndex += 1
         }
-        turnActivityGroup = []
-        turnMessages = []
+        turnItems = []
       }
 
       for (const message of messages) {
@@ -1207,15 +1206,135 @@ export const codexAppClientScript = `    const els = {
           continue
         }
 
+        turnItems.push(message)
+      }
+      flushTurn()
+      appendLatestChangeSummaryCard()
+      finishMessagesRender(shouldFollow, previousScrollTop)
+    }
+
+    function appendTurnItems(items, turnIndex) {
+      const activityMessages = items.filter(isActivityMessage)
+      if (groupHasActiveRunTimer(activityMessages)) {
+        appendActiveTurnItems(items, turnIndex)
+        return
+      }
+
+      if (activityMessages.length > 0) {
+        appendActivityGroup(activityMessages, turnIndex)
+      }
+      for (const message of completedTurnMessages(items)) {
+        appendRenderedMessage(message)
+      }
+    }
+
+    function appendActiveTurnItems(items, turnIndex) {
+      let activitySegment = []
+      let segmentIndex = 0
+      const flushActivitySegment = () => {
+        if (activitySegment.length === 0) return
+        appendActivityGroup(activitySegment, String(turnIndex) + ":" + segmentIndex, {
+          open: true,
+        })
+        activitySegment = []
+        segmentIndex += 1
+      }
+
+      for (const message of items) {
         if (isActivityMessage(message)) {
-          turnActivityGroup.push(message)
+          activitySegment.push(message)
           continue
         }
 
-        turnMessages.push(message)
+        flushActivitySegment()
+        appendRenderedMessage(message)
       }
-      flushTurn()
-      finishMessagesRender(shouldFollow, previousScrollTop)
+      flushActivitySegment()
+    }
+
+    function completedTurnMessages(items) {
+      const visibleMessages = items.filter((message) => !isActivityMessage(message))
+      if (!items.some(isActivityMessage)) return visibleMessages
+
+      const assistantMessages = visibleMessages.filter(
+        (message) => message.kind === "assistant" && String(message.text || "").trim()
+      )
+      if (assistantMessages.length <= 1) return visibleMessages
+
+      const finalAssistant = assistantMessages[assistantMessages.length - 1]
+      return visibleMessages.filter(
+        (message) => message.kind !== "assistant" || message === finalAssistant
+      )
+    }
+
+    function appendLatestChangeSummaryCard() {
+      const files = Array.isArray(latestChanges.files) ? latestChanges.files : []
+      if (
+        !state.activeSessionId ||
+        isActiveSessionRunning() ||
+        !latestChanges.available ||
+        files.length === 0
+      ) {
+        return
+      }
+
+      const totals = sumChangeStats(files)
+      const card = document.createElement("div")
+      card.className = "run-change-card"
+
+      const icon = document.createElement("div")
+      icon.className = "run-change-card-icon"
+      icon.textContent = fileBadge(files[0].path)
+
+      const body = document.createElement("div")
+      body.className = "run-change-card-body"
+      const title = document.createElement("div")
+      title.className = "run-change-card-title"
+      title.textContent =
+        files.length === 1
+          ? "已编辑 " + basename(files[0].path)
+          : "已编辑 " + files.length + " 个文件"
+      const stats = document.createElement("div")
+      stats.className = "run-change-card-stats"
+      const additions = document.createElement("span")
+      additions.className = "add"
+      additions.textContent = "+" + totals.additions
+      const deletions = document.createElement("span")
+      deletions.className = "del"
+      deletions.textContent = "-" + totals.deletions
+      stats.appendChild(additions)
+      stats.appendChild(document.createTextNode(" "))
+      stats.appendChild(deletions)
+      body.appendChild(title)
+      body.appendChild(stats)
+
+      const actions = document.createElement("div")
+      actions.className = "run-change-card-actions"
+      const undo = document.createElement("button")
+      undo.type = "button"
+      undo.className = "run-change-card-action"
+      undo.textContent = "撤销"
+      undo.disabled = Boolean(els.discardSessionBtn.disabled)
+      undo.addEventListener("click", () => {
+        if (!undo.disabled) void discardActiveSessionChanges()
+      })
+
+      const review = document.createElement("button")
+      review.type = "button"
+      review.className = "run-change-card-action primary"
+      review.textContent = "审查"
+      review.addEventListener("click", () => {
+        setReviewMode("changes")
+        setReviewPanelHidden(false)
+        if (files[0] && files[0].path) selectChangeFile(files[0].path, true)
+      })
+      actions.appendChild(undo)
+      actions.appendChild(review)
+
+      card.appendChild(icon)
+      card.appendChild(body)
+      card.appendChild(actions)
+      els.messages.appendChild(card)
     }
 
 	    function appendRenderedMessage(message) {
@@ -1868,9 +1987,7 @@ export const codexAppClientScript = `    const els = {
         }
 
         if (paragraphLines.length > 0) {
-          const paragraph = document.createElement("p")
-          appendInlineContent(paragraph, paragraphLines.join(" "))
-          container.appendChild(paragraph)
+          appendReadableParagraphs(container, paragraphLines)
           continue
         }
 
@@ -1950,6 +2067,65 @@ export const codexAppClientScript = `    const els = {
       table.appendChild(tbody)
       container.appendChild(table)
       return index
+    }
+
+    function appendReadableParagraphs(container, lines) {
+      for (const paragraphLines of createReadableParagraphGroups(lines)) {
+        const paragraph = document.createElement("p")
+        appendParagraphContent(paragraph, paragraphLines)
+        container.appendChild(paragraph)
+      }
+    }
+
+    function createReadableParagraphGroups(lines) {
+      const values = (Array.isArray(lines) ? lines : [String(lines || "")])
+        .map((line) => String(line || ""))
+      if (values.length !== 1) return [values]
+
+      const chunks = splitLongReadableParagraph(values[0])
+      return chunks.length > 1 ? chunks.map((chunk) => [chunk]) : [values]
+    }
+
+    function appendParagraphContent(parent, lines) {
+      const values = Array.isArray(lines) ? lines : [String(lines || "")]
+      values.forEach((line, index) => {
+        if (index > 0) parent.appendChild(document.createElement("br"))
+        appendInlineContent(parent, line)
+      })
+    }
+
+    function splitLongReadableParagraph(text) {
+      const value = String(text || "")
+      if (
+        value.length < READABLE_PARAGRAPH_MIN_CHARS ||
+        !/[\\u3400-\\u9fff]/.test(value)
+      ) {
+        return [value]
+      }
+
+      const sentences = value.match(/[^。！？；]+[。！？；]*/g)
+        ?.map((sentence) => sentence.trim())
+        .filter(Boolean)
+      if (!sentences || sentences.length < 3) return [value]
+
+      const chunks = []
+      let current = ""
+      for (const sentence of sentences) {
+        const next = current ? current + " " + sentence : sentence
+        if (
+          current &&
+          current.length >= READABLE_PARAGRAPH_TARGET_CHARS &&
+          next.length > READABLE_PARAGRAPH_MAX_CHARS
+        ) {
+          chunks.push(current)
+          current = sentence
+        } else {
+          current = next
+        }
+      }
+      if (current) chunks.push(current)
+
+      return chunks.length > 1 ? chunks : [value]
     }
 
     function appendInlineContent(parent, text) {
@@ -2074,7 +2250,7 @@ export const codexAppClientScript = `    const els = {
       return value
     }
 
-    function appendActivityGroup(messages, index) {
+    function appendActivityGroup(messages, index, options) {
       const activity = createActivityView(messages)
       if (activity.items.length === 0 && !activity.elapsedLabel && !activity.summary) return
 
@@ -2082,7 +2258,11 @@ export const codexAppClientScript = `    const els = {
       const activeProcess = groupHasActiveRunTimer(messages)
       const details = document.createElement("details")
       details.className = "activity-group" + (activity.items.length === 0 ? " empty" : "")
-      details.open = activeProcess || openActivityGroups.has(groupKey)
+      details.open = Boolean(
+        options && options.open
+          ? true
+          : activeProcess || openActivityGroups.has(groupKey)
+      )
       details.addEventListener("toggle", () => {
         if (details.open) {
           openActivityGroups.add(groupKey)
@@ -2691,10 +2871,22 @@ export const codexAppClientScript = `    const els = {
       streamingThoughts.delete(sessionId)
     }
 
+    function markAssistantBoundary(sessionId) {
+      const targetSessionId = sessionId || state.activeSessionId
+      if (targetSessionId) assistantBoundarySessions.add(targetSessionId)
+    }
+
 	    function appendAssistant(text, sessionId) {
       const targetSessionId = sessionId || state.activeSessionId
 	      const messages = activeMessages(targetSessionId)
       let streamingAssistant = streamingAssistants.get(targetSessionId)
+      if (assistantBoundarySessions.has(targetSessionId)) {
+        if (streamingAssistant && String(streamingAssistant.text || "").trim()) {
+          streamingAssistants.delete(targetSessionId)
+          streamingAssistant = null
+        }
+        assistantBoundarySessions.delete(targetSessionId)
+      }
 	      if (!streamingAssistant || messages.indexOf(streamingAssistant) === -1) {
 	        streamingAssistant = { kind: "assistant", text: "" }
         streamingAssistants.set(targetSessionId, streamingAssistant)
@@ -2816,6 +3008,7 @@ export const codexAppClientScript = `    const els = {
         streamingAssistants.clear()
         streamingMultiRuns.clear()
         streamingThoughts.clear()
+        assistantBoundarySessions.clear()
         discardRunTimer()
         return
       }
@@ -2825,6 +3018,7 @@ export const codexAppClientScript = `    const els = {
       streamingMultiRuns.delete(sessionId)
       finishThinking(sessionId)
       discardRunTimer(sessionId)
+      assistantBoundarySessions.delete(sessionId)
     }
 
 	    function formatAgentEvent(event) {
@@ -2892,12 +3086,18 @@ export const codexAppClientScript = `    const els = {
       }
 
       if (event.type === "thinking") {
+        flushAssistantQueue(sessionId, true)
         updateThinking(event.text, sessionId)
+        markAssistantBoundary(sessionId)
         return
       }
 
       const text = formatAgentEvent(event)
-      if (text) appendRunMessage(isActivityEvent(event) ? "activity" : "meta", text, sessionId)
+      if (text) {
+        flushAssistantQueue(sessionId, true)
+        appendRunMessage(isActivityEvent(event) ? "activity" : "meta", text, sessionId)
+        if (isActivityEvent(event)) markAssistantBoundary(sessionId)
+      }
     }
 
     function isActivityEvent(event) {
@@ -3594,6 +3794,7 @@ export const codexAppClientScript = `    const els = {
       renderChangesSummary(latestChanges, files)
       renderChangeDiffs(visibleFiles)
       renderChangeTree(visibleFiles)
+      if (state.activeSessionId) renderMessagesForSession(state.activeSessionId)
     }
 
     function updateChangesFloat(files) {
@@ -4002,9 +4203,11 @@ export const codexAppClientScript = `    const els = {
         flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
         finishThinking(sessionId)
+        assistantBoundarySessions.delete(sessionId)
         setLocalSessionActiveRun(sessionId, false)
         syncSessionRunningFromLocalRefs(sessionId)
 	        appendMeta("[错误] " + payload.message, true, sessionId)
+        renderMessagesForSession(sessionId)
         return
       }
 	      if (payload.type === "started") {
@@ -4017,10 +4220,12 @@ export const codexAppClientScript = `    const els = {
         flushAssistantQueue(sessionId, true)
         finishRunTimer(sessionId)
         finishThinking(sessionId)
+        assistantBoundarySessions.delete(sessionId)
         setLocalSessionActiveRun(sessionId, false)
         syncSessionRunningFromLocalRefs(sessionId)
         streamingAssistants.delete(sessionId)
         streamingMultiRuns.delete(sessionId)
+        renderMessagesForSession(sessionId)
       }
     }
 

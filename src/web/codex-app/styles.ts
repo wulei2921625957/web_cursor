@@ -1011,6 +1011,93 @@ export const codexAppStyles = `    :root {
       padding: 8px 10px;
     }
 
+    .run-change-card {
+      display: grid;
+      width: min(880px, 100%);
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      align-self: center;
+      gap: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      padding: 14px 16px;
+    }
+
+    .run-change-card-icon {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .run-change-card-body {
+      display: grid;
+      min-width: 0;
+      gap: 5px;
+    }
+
+    .run-change-card-title {
+      overflow: hidden;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 760;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .run-change-card-stats {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .run-change-card-stats .add {
+      color: var(--success);
+    }
+
+    .run-change-card-stats .del {
+      color: var(--danger);
+    }
+
+    .run-change-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .run-change-card-action {
+      min-height: 34px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 760;
+      padding: 0 12px;
+    }
+
+    .run-change-card-action:hover:not(:disabled) {
+      background: var(--panel-soft);
+    }
+
+    .run-change-card-action.primary {
+      border-color: var(--border);
+      background: var(--panel);
+    }
+
+    .run-change-card-action:disabled {
+      color: var(--faint);
+      cursor: not-allowed;
+    }
+
     .activity-group {
       align-self: center;
       border: 0;
@@ -2624,6 +2711,15 @@ export const codexAppStyles = `    :root {
         max-width: calc(100vw - 34px);
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .run-change-card {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .run-change-card-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
       }
 
       .model-picker {
