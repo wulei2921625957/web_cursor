@@ -1338,8 +1338,8 @@ export const codexAppStyles = `    :root {
       align-self: center;
       width: min(880px, 100%);
       color: var(--text);
-      font-size: 16px;
-      line-height: 1.72;
+      font-size: 15px;
+      line-height: 1.66;
     }
 
     .message.meta,
@@ -1365,17 +1365,17 @@ export const codexAppStyles = `    :root {
     }
 
     .markdown h1 {
-      font-size: 26px;
+      font-size: 24px;
     }
 
     .markdown h2 {
       border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
-      font-size: 22px;
+      font-size: 20px;
     }
 
     .markdown h3 {
-      font-size: 18px;
+      font-size: 17px;
     }
 
     .markdown h4,
