@@ -2,13 +2,18 @@ import path from "node:path"
 import {
   Agent,
   Cursor,
+  type AgentOptions,
+  type LocalAgentStore,
   type ModelSelection,
   type Run,
   type RunResult,
   type SDKAgent,
+  type SDKImage,
   type SDKMessage,
+  type SDKUserMessage,
   type McpServerConfig,
   type SDKModel,
+  type TokenUsage as SDKTokenUsage,
 } from "@cursor/sdk"
 import {
   SESSION_MEMORY_JSON_SCHEMA,
@@ -56,6 +61,8 @@ export type AgentEvent =
     }
   | { type: "status"; status: string; message?: string; errorCode?: string }
   | { type: "task"; status?: string; text?: string }
+  | { type: "request"; requestId: string }
+  | { type: "usage"; usage: TokenUsage }
   | {
       type: "result"
       status: string
@@ -73,10 +80,9 @@ export type ModelChoice = {
   contextWindowSource?: ModelContextSource
 }
 
-export type TokenUsage = {
-  inputTokens?: number
-  outputTokens?: number
-}
+export type TokenUsage = Partial<SDKTokenUsage>
+
+export type AgentPromptImage = SDKImage
 
 export type ContextUsage = {
   charsPerToken: number
@@ -125,6 +131,7 @@ export type CodingAgentSessionSnapshot = {
   history: ContextEntry[]
   memory?: SessionMemorySnapshot
   model: ModelSelection
+  sdkAgentId?: string
 }
 
 type CompactContextOptions = {
@@ -141,11 +148,13 @@ type CodingAgentSessionOptions = {
   initialState?: Partial<CodingAgentSessionSnapshot>
   context?: Partial<ContextCompactionOptions>
   sandboxOptions?: LocalSandboxOptions
+  sdkStore?: LocalAgentStore
   shellApprovalHandler?: ShellApprovalHandler
   workspaceRoots?: string[]
 }
 
 type SendPromptOptions = {
+  images?: AgentPromptImage[]
   instructions?: string
   mcpServers?: Record<string, McpServerConfig>
   prompt: string
@@ -204,6 +213,8 @@ export class CodingAgentSession {
   private mode: ExecutionMode
   private modelSelection: ModelSelection
   private sandboxOptions?: LocalSandboxOptions
+  private sdkAgentId?: string
+  private sdkStore?: LocalAgentStore
   private shellApprovalHandler?: ShellApprovalHandler
   private workspaceRoots: string[]
 
@@ -216,6 +227,8 @@ export class CodingAgentSession {
     this.mode = "local"
     this.modelSelection = options.initialState?.model ?? options.model
     this.sandboxOptions = options.sandboxOptions
+    this.sdkAgentId = options.initialState?.sdkAgentId
+    this.sdkStore = options.sdkStore
     this.shellApprovalHandler = options.shellApprovalHandler
     this.workspaceRoots = normalizeWorkspaceRoots(this.cwd, options.workspaceRoots)
   }
@@ -312,6 +325,7 @@ export class CodingAgentSession {
       history: memory.recentEntries.map((entry) => ({ ...entry })),
       memory,
       model: this.modelSelection,
+      sdkAgentId: this.sdkAgentId,
     }
   }
 
@@ -359,10 +373,10 @@ export class CodingAgentSession {
     return { cancelled: true }
   }
 
-  async sendPrompt({ instructions, mcpServers, prompt, onEvent }: SendPromptOptions) {
+  async sendPrompt({ images, instructions, mcpServers, prompt, onEvent }: SendPromptOptions) {
     await this.compactContextIfNeeded(prompt, onEvent)
 
-    const result = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers)
+    const result = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
 
     if (result.ok) {
       return
@@ -380,7 +394,7 @@ export class CodingAgentSession {
       })
 
       if (compacted.compacted) {
-        const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers)
+        const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
 
         if (retry.ok) {
           return
@@ -434,6 +448,7 @@ export class CodingAgentSession {
         status: "success",
       })
       await this.disposeAgent()
+      this.sdkAgentId = undefined
       const summaryChars = output.summaryText.length
 
       const result = {
@@ -469,6 +484,7 @@ export class CodingAgentSession {
         status: "fallback",
       })
       await this.disposeAgent()
+      this.sdkAgentId = undefined
 
       onEvent?.({
         type: "compaction",
@@ -494,7 +510,8 @@ export class CodingAgentSession {
     prompt: string,
     onEvent: (event: AgentEvent) => void,
     instructions = "",
-    mcpServers?: Record<string, McpServerConfig>
+    mcpServers?: Record<string, McpServerConfig>,
+    images?: AgentPromptImage[]
   ): Promise<
     { ok: true } | { ok: false; canRetryAfterCompaction: boolean; error: unknown }
   > {
@@ -509,7 +526,7 @@ export class CodingAgentSession {
       const agent = await this.getAgent()
       const memoryContext = this.memory.buildPromptContext()
       this.memory.recordPromptSnapshot(prompt, memoryContext)
-      run = await agent.send(
+      const message = createSdkUserMessage(
         buildPrompt(
           prompt,
           memoryContext,
@@ -517,6 +534,10 @@ export class CodingAgentSession {
           this.sandboxOptions,
           this.workspaceRoots
         ),
+        images
+      )
+      run = await agent.send(
+        message,
         {
           mode: "agent",
           ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
@@ -635,7 +656,7 @@ export class CodingAgentSession {
     }
   }
 
-  private createAgent() {
+  private async createAgent() {
     const customTools = sdkCustomToolsEnabled(this.sandboxOptions)
       ? createWorkspaceCustomTools(
           this.cwd,
@@ -644,24 +665,35 @@ export class CodingAgentSession {
           this.workspaceRoots
         )
       : undefined
-    const options = {
+    const options: AgentOptions = {
       apiKey: this.apiKey || undefined,
+      local: {
+        autoReview: sdkAutoReviewEnabled(this.sandboxOptions),
+        ...(customTools ? { customTools } : {}),
+        cwd: sdkLocalCwd(this.cwd, this.workspaceRoots),
+        ...(this.sdkStore ? { store: this.sdkStore } : {}),
+        ...(this.sandboxOptions
+          ? { sandboxOptions: sdkSandboxOptions(this.sandboxOptions) }
+          : {}),
+      },
       mode: "agent" as const,
       name: "Lightweight coding agent",
       model: this.modelSelection,
     }
 
-    return Agent.create({
-      ...options,
-      local: {
-        autoReview: sdkAutoReviewEnabled(this.sandboxOptions),
-        ...(customTools ? { customTools } : {}),
-        cwd: this.cwd,
-        ...(this.sandboxOptions
-          ? { sandboxOptions: sdkSandboxOptions(this.sandboxOptions) }
-          : {}),
-      },
-    })
+    if (this.sdkAgentId) {
+      try {
+        const resumed = await Agent.resume(this.sdkAgentId, options)
+        this.sdkAgentId = resumed.agentId
+        return resumed
+      } catch {
+        this.sdkAgentId = undefined
+      }
+    }
+
+    const created = await Agent.create(options)
+    this.sdkAgentId = created.agentId
+    return created
   }
 
   private async ensureAgentFresh() {
@@ -775,6 +807,7 @@ export class CodingAgentSession {
       model: this.modelSelection,
       local: {
         cwd: this.cwd,
+        ...(this.sdkStore ? { store: this.sdkStore } : {}),
       },
     })
 
@@ -873,6 +906,19 @@ export function buildPrompt(
 
   parts.push("", "User task:", prompt)
   return parts.join("\n")
+}
+
+export function createSdkUserMessage(
+  text: string,
+  images: AgentPromptImage[] | undefined
+): string | SDKUserMessage {
+  const filteredImages = (images ?? []).filter(Boolean)
+  return filteredImages.length > 0
+    ? {
+        text,
+        images: filteredImages,
+      }
+    : text
 }
 
 function workspaceAccessInstructions(
@@ -1210,12 +1256,19 @@ class RunHistoryRecorder {
         }
         break
       }
+      case "request":
+        this.statusEntries.push({
+          role: "status",
+          text: `request ${event.requestId}`,
+        })
+        break
+      case "usage":
+        break
       case "result":
         this.resultText = [
           `status=${event.status}`,
           event.durationMs ? `duration=${formatDuration(event.durationMs)}` : undefined,
-          event.usage?.inputTokens ? `input=${event.usage.inputTokens}` : undefined,
-          event.usage?.outputTokens ? `output=${event.usage.outputTokens}` : undefined,
+          ...tokenUsageParts(event.usage),
           event.message ? `message=${event.message}` : undefined,
           event.errorCode ? `code=${event.errorCode}` : undefined,
         ]
@@ -1504,6 +1557,21 @@ export function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function tokenUsageParts(usage: TokenUsage | undefined) {
+  if (!usage) {
+    return []
+  }
+
+  return [
+    usage.inputTokens ? `input=${usage.inputTokens}` : undefined,
+    usage.outputTokens ? `output=${usage.outputTokens}` : undefined,
+    usage.cacheReadTokens ? `cacheRead=${usage.cacheReadTokens}` : undefined,
+    usage.cacheWriteTokens ? `cacheWrite=${usage.cacheWriteTokens}` : undefined,
+    usage.totalTokens ? `total=${usage.totalTokens}` : undefined,
+    usage.reasoningTokens ? `reasoning=${usage.reasoningTokens}` : undefined,
+  ].filter((part): part is string => Boolean(part))
+}
+
 function modelToChoices(model: SDKModel): ModelChoice[] {
   const variants = [...(model.variants ?? [])]
   if (variants.length === 0) {
@@ -1662,6 +1730,11 @@ function normalizeWorkspaceRoots(primaryRoot: string, workspaceRoots?: string[])
   return roots
 }
 
+function sdkLocalCwd(primaryRoot: string, workspaceRoots?: string[]) {
+  const roots = normalizeWorkspaceRoots(primaryRoot, workspaceRoots)
+  return roots.length > 1 ? roots : roots[0] ?? path.resolve(primaryRoot)
+}
+
 function sameStringArray(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
@@ -1710,6 +1783,12 @@ function emitSdkMessage(event: SDKMessage, emit: (event: AgentEvent) => void) {
       break
     case "task":
       emit({ type: "task", status: event.status, text: event.text })
+      break
+    case "request":
+      emit({ type: "request", requestId: event.request_id })
+      break
+    case "usage":
+      emit({ type: "usage", usage: event.usage })
       break
     default:
       break

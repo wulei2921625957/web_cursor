@@ -1,6 +1,6 @@
 # AI Project Context
 
-Last reviewed against source on 2026-06-30.
+Last reviewed against source on 2026-07-01.
 
 ## Purpose
 
@@ -29,10 +29,10 @@ The package can also be installed as the `code-agent-ui` command.
 - Transient per-session IDE context sync API for active/open files, selection,
   and diagnostics; injected into the next run as low-priority workspace context.
 - Single-agent runs using `@cursor/sdk`.
-- Multi-agent runs that plan up to six subtasks, classify read/write access,
-  run read-only subagents with read-only permissions, serialize write-capable
-  tasks within dependency ranks, show expandable task prompt/output/tool/token
-  usage details, and support per-task cancellation.
+- Multi-agent runs using Cursor SDK native subagents through the SDK Task tool,
+  with expandable task prompt/output/error/tool/token/permission-boundary
+  details. Whole multi-agent runs can be cancelled; SDK subagents do not expose
+  independent per-task cancellation.
 - Context compaction with structured session memory and deterministic fallback.
 - Memory tab session-memory diagnostics for summary quality, prompt snapshots,
   and compaction history.
@@ -133,9 +133,9 @@ The package can also be installed as the `code-agent-ui` command.
   and hooks.
 
 - `src/multi-agent.ts`
-  Implements a planner plus multiple Cursor SDK subagents. The planner returns a
-  JSON task graph. Tasks run by dependency rank; independent tasks in the same
-  rank run concurrently. Results are summarized back into the main session.
+  Wraps Cursor SDK native subagents. It registers SDK `agents`, sends the
+  coordinator prompt, maps SDK Task tool calls into UI task state, and
+  summarizes results back into the main session.
 
 - `src/web/codex-app/render.ts`
   Assembles the full HTML document from body, styles, and client script strings.
@@ -166,6 +166,10 @@ The package can also be installed as the `code-agent-ui` command.
   `<opened-workspace>/.coding-agent/sessions.sqlite`, ignored by Git. Stores
   project metadata, sessions, messages, agent snapshots, change baselines, change
   results, and workspace metadata.
+
+- Cursor SDK native agent store:
+  `<opened-workspace>/.coding-agent/sdk-agent-store/`, ignored by Git. Stores
+  SDK local agent/run/checkpoint JSONL data used by `Agent.resume(agentId)`.
 
 - Attachments:
   `<opened-workspace>/.coding-agent/uploads/<session-id>/...`, ignored by Git.
@@ -283,8 +287,9 @@ handler.
 - `POST /api/sessions/discard`: restore the session workspace to the run
   baseline tree.
 - `POST /api/cancel`: cancel the active single-agent or multi-agent run.
-- `POST /api/multi-agent/task/cancel`: cancel one running subagent task inside
-  the active multi-agent run.
+- `POST /api/multi-agent/task/cancel`: records that per-subagent cancellation
+  was requested, but SDK native subagents currently require cancelling the whole
+  active multi-agent run.
 - `GET /api/automations`: list project-local automations for the active project.
 - `POST /api/automations/preview`: validate interval/cron input and return the
   next scheduled run time for the automation editor.

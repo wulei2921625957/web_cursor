@@ -4,7 +4,7 @@ A small local web UI that runs a Cursor SDK agent against local workspaces.
 
 ## Getting Started
 
-Use Node.js 20 or newer.
+Use Node.js 22.13 or newer.
 
 Install dependencies:
 
@@ -15,7 +15,7 @@ npm install
 ### Windows notes
 
 Use a normal Windows desktop shell such as PowerShell or Windows Terminal.
-Node.js 20 or newer is required. `better-sqlite3` uses a native module; if its
+Node.js 22.13 or newer is required. `better-sqlite3` uses a native module; if its
 prebuilt package cannot be downloaded for your Node version, `npm install` may
 need Python and Visual Studio Build Tools so `node-gyp` can compile it.
 
@@ -254,10 +254,11 @@ normal `command` uses POSIX shell syntax.
 
 The optional `multiAgent.agents` config defines subagent profiles. Profiles can
 set `name`, `description`, `instructions`, `model`, and `permissionMode`.
-Read-only subtasks are forced into read-only permissions by default, while
-write-capable subtasks are serialized within each dependency rank to reduce
-silent overwrite risk. Running subagents can be cancelled from their task card,
-and task details include prompt, output, errors, tool usage, and token usage.
+Multi-agent mode now uses Cursor SDK native subagents through the SDK Task tool.
+Task details include prompt, output, errors, tool usage, token usage, and the
+requested permission boundary. SDK subagents inherit the coordinator's hard tool
+boundary, so individual running subagents cannot be cancelled independently; use
+the normal Cancel action to stop the whole multi-agent run.
 
 ## Automations
 

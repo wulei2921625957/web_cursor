@@ -2696,6 +2696,7 @@ export const codexAppClientScript = `    const els = {
         task.id || "",
         task.agentName || "",
         task.accessMode === "write" ? "write" : "read-only",
+        task.permissionBoundary || "",
         task.modelLabel || "",
         task.durationMs ? formatDuration(task.durationMs) : "",
       ].filter(Boolean).join(" · ")
@@ -2720,15 +2721,11 @@ export const codexAppClientScript = `    const els = {
         card.appendChild(renderMultiTaskSteeringForm(task))
       }
 
-      const usageText = task.usage
-        ? [
-            task.usage.inputTokens ? "input " + task.usage.inputTokens : "",
-            task.usage.outputTokens ? "output " + task.usage.outputTokens : "",
-          ].filter(Boolean).join(" · ")
-        : ""
+      const usageText = formatTokenUsage(task.usage)
       const toolUsageText = formatMultiAgentToolUsage(task.toolUsage)
       const steeringText = formatMultiAgentSteering(task.steering)
       if (
+        task.permissionBoundary ||
         task.prompt ||
         task.resultText ||
         task.errorMessage ||
@@ -2743,6 +2740,9 @@ export const codexAppClientScript = `    const els = {
         details.appendChild(summary)
         if (steeringText) {
           details.appendChild(renderMultiTaskDetail("Steering", steeringText))
+        }
+        if (task.permissionBoundary) {
+          details.appendChild(renderMultiTaskDetail("权限边界", task.permissionBoundary))
         }
         if (task.prompt) {
           details.appendChild(renderMultiTaskDetail("Prompt", task.prompt))
@@ -2807,7 +2807,7 @@ export const codexAppClientScript = `    const els = {
       return steering
         .slice(-8)
         .map((item) => {
-          const status = item.appliedToPrompt ? "已进入 prompt" : "运行中记录"
+          const status = item.appliedToPrompt ? "已进入 prompt" : "未注入 SDK，已记录"
           return "[" + status + "] " + (item.text || "")
         })
         .join("\\n\\n")
@@ -4013,6 +4013,13 @@ export const codexAppClientScript = `    const els = {
       if (event.type === "task") {
         return "[任务] " + [event.status, event.text].filter(Boolean).join(" ")
       }
+      if (event.type === "request") {
+        return "[请求] 等待输入或审批 " + compactText(event.requestId || "")
+      }
+      if (event.type === "usage") {
+        const usage = formatTokenUsage(event.usage)
+        return usage ? "[用量] " + usage : ""
+      }
       if (event.type === "compaction") {
         return "[上下文] " + [event.status, event.message].filter(Boolean).join(" ")
       }
@@ -4023,13 +4030,24 @@ export const codexAppClientScript = `    const els = {
         const details = [
           "status=" + event.status,
           event.durationMs ? "duration=" + formatDuration(event.durationMs) : "",
-          event.usage && event.usage.inputTokens ? "input=" + event.usage.inputTokens : "",
-          event.usage && event.usage.outputTokens ? "output=" + event.usage.outputTokens : "",
+          formatTokenUsage(event.usage),
           detail ? "错误详情：" + detail : "",
         ].filter(Boolean)
         return "[完成] " + details.join(" ")
       }
       return ""
+    }
+
+    function formatTokenUsage(usage) {
+      if (!usage) return ""
+      return [
+        usage.inputTokens ? "input=" + usage.inputTokens : "",
+        usage.outputTokens ? "output=" + usage.outputTokens : "",
+        usage.cacheReadTokens ? "cache_read=" + usage.cacheReadTokens : "",
+        usage.cacheWriteTokens ? "cache_write=" + usage.cacheWriteTokens : "",
+        usage.totalTokens ? "total=" + usage.totalTokens : "",
+        usage.reasoningTokens ? "reasoning=" + usage.reasoningTokens : "",
+      ].filter(Boolean).join(" · ")
     }
 
     function formatEventDetail(event, maxLength) {

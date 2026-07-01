@@ -1,6 +1,6 @@
 # Development Guidelines For AI Agents
 
-Last reviewed against source on 2026-06-30.
+Last reviewed against source on 2026-07-01.
 
 ## Default Workflow
 
@@ -145,14 +145,14 @@ code identifiers should stay clear and stable.
 
 ## Multi-Agent Rules
 
-- Planner output is capped at six tasks. Keep task prompts self-contained.
-- Classify subtasks as read-only or write-capable before execution.
-- Read-only subagents must run with read-only permissions even when the parent
-  session mode is broader.
-- Write-capable subtasks in the same dependency rank should run serially to
-  reduce silent overwrite and merge risk.
-- Per-task cancellation should cancel only the targeted subagent run and preserve
-  completed task results for session memory.
+- Multi-agent execution uses Cursor SDK native subagents registered through
+  `AgentOptions.agents`; keep prompts self-contained and limit coordinator Task
+  calls to a small number.
+- SDK subagents inherit the coordinator's hard tool boundary. Read-only and
+  write-capable permission intent is represented in subagent instructions and UI
+  state, but only the parent SDK sandbox/custom tools are enforceable.
+- Per-subagent cancellation is not exposed by the SDK. Keep whole-run
+  cancellation working and make per-task cancel requests explicit in the UI.
 - Per-task tool usage should stay bounded and summarized; do not persist full
   tool payloads in multi-agent state.
 - `multiAgent.agents` profiles from extension config may override subagent

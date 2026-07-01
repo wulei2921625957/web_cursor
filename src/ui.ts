@@ -26,6 +26,7 @@ import {
   formatModelLabel,
   formatDuration,
   type AgentEvent,
+  type AgentPromptImage,
   type CodingAgentSessionSnapshot,
   type ContextCompactionOptions,
   type LocalSandboxOptions,
@@ -55,7 +56,11 @@ import {
   unstageWorkspaceFile,
 } from "./git-workspace.js"
 import { normalizeSessionMemorySnapshot } from "./session-memory.js"
-import type { ModelSelection } from "@cursor/sdk"
+import {
+  JsonlLocalAgentStore,
+  type LocalAgentStore,
+  type ModelSelection,
+} from "@cursor/sdk"
 import { renderCodexAppHtml } from "./web/codex-app/render.js"
 import {
   HttpError,
@@ -267,6 +272,8 @@ type AutomationRunHistory = {
 }
 
 type SavedRunAttachment = {
+  imageDataBase64?: string
+  imageMimeType?: string
   kind: "image" | "text" | "binary"
   name: string
   path: string
@@ -321,7 +328,7 @@ type PersistedSession = {
   workspace?: SessionWorkspace
 }
 
-const DEFAULT_MODEL = process.env.CURSOR_MODEL ?? "composer-2"
+const DEFAULT_MODEL = process.env.CURSOR_MODEL ?? "composer-2.5"
 const DEFAULT_UI_PORT = 3030
 const MAX_RUN_ATTACHMENTS = 8
 const MAX_RUN_ATTACHMENT_BYTES = 8 * 1024 * 1024
@@ -409,6 +416,7 @@ async function main() {
   const automationsByProject = new Map<string, ProjectAutomation[]>()
   const automationTimers = new Map<string, NodeJS.Timeout>()
   const approvalQueue = new ShellApprovalQueue(() => createEntityId("approval"))
+  const sdkLocalStores = new Map<string, LocalAgentStore>()
   const projects = new Map<string, UiProject>()
   const projectIdsByPath = new Map<string, string>()
   const loadedProjectPaths = new Set<string>()
@@ -417,6 +425,21 @@ async function main() {
 
   const allSessions = () =>
     Array.from(projects.values()).flatMap((project) => project.sessions)
+
+  const sdkLocalStoreForProject = (cwd: string) => {
+    const root = path.resolve(cwd)
+    const existing = sdkLocalStores.get(root)
+    if (existing) {
+      return existing
+    }
+
+    const storage = getProjectStoragePaths(root)
+    mkdirSync(storage.sdkAgentStoreDir, { recursive: true })
+    void ensureProjectStorageIgnored(root).catch(() => undefined)
+    const store = new JsonlLocalAgentStore(storage.sdkAgentStoreDir)
+    sdkLocalStores.set(root, store)
+    return store
+  }
 
   const defaultSessionIdForProject = (project: UiProject | null | undefined) =>
     project?.sessions.find((session) => !session.archived)?.id ??
@@ -556,9 +579,10 @@ async function main() {
       context: options.context,
       cwd: workspace.cwd,
       force: options.force,
-      initialState: { ...snapshot, model },
+      initialState: { ...snapshot, model, sdkAgentId: undefined },
       model,
       sandboxOptions: options.sandboxOptions,
+      sdkStore: sdkLocalStoreForProject(project.cwd),
       shellApprovalHandler: approvalQueue.createHandler(project.id, session.id),
       workspaceRoots: agentWorkspaceRootsForSession(session),
     })
@@ -959,6 +983,7 @@ async function main() {
         force: options.force,
         model: cloneModelSelection(selectedModel),
         sandboxOptions: options.sandboxOptions,
+        sdkStore: sdkLocalStoreForProject(project.cwd),
         shellApprovalHandler: approvalQueue.createHandler(project.id, sessionId),
         workspaceRoots: agentWorkspaceRootsForWorkspace(workspace),
       }),
@@ -1004,6 +1029,7 @@ async function main() {
     const snapshot = session.agent.snapshot()
     if (snapshot.contextSummary.trim()) return false
     if (snapshot.history.some(isMeaningfulContextEntry)) return false
+    if (snapshot.sdkAgentId) return false
     if (snapshot.memory?.summaryText.trim()) return false
     if (snapshot.memory?.recentEntries.some(isMeaningfulContextEntry)) return false
     if (snapshot.memory?.transcriptEntries.some(isMeaningfulContextEntry)) {
@@ -1044,6 +1070,7 @@ async function main() {
         initialState: agentState,
         model,
         sandboxOptions: options.sandboxOptions,
+        sdkStore: sdkLocalStoreForProject(project.cwd),
         shellApprovalHandler: approvalQueue.createHandler(project.id, sessionId),
         workspaceRoots: agentWorkspaceRootsForWorkspace(workspace),
       }),
@@ -1398,6 +1425,7 @@ async function main() {
     automationsByProject.delete(project.id)
     projectIdsByPath.delete(project.cwd)
     loadedProjectPaths.delete(project.cwd)
+    sdkLocalStores.delete(path.resolve(project.cwd))
     await cleanupOrphanManagedWorktrees({
       activeWorktreePaths: activeManagedWorktreePaths(),
       managedRoot: getManagedWorktreeRoot(),
@@ -1744,6 +1772,7 @@ async function main() {
       }
 
       let runPrompt = prompt
+      let promptImages: AgentPromptImage[] = []
       try {
         const savedAttachments = await saveRunAttachments(
           sessionWorkspaceCwd(activeSession),
@@ -1751,13 +1780,18 @@ async function main() {
           attachmentInputs
         )
         runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
+        promptImages = buildPromptImagesFromAttachments(savedAttachments)
         if (savedAttachments.length > 0) {
+          const imageMessage =
+            promptImages.length > 0
+              ? `，其中 ${promptImages.length} 个图片已直接传给模型`
+              : ""
           send({
             type: "agent",
             event: {
               type: "task",
               status: "附件",
-              text: `已保存 ${savedAttachments.length} 个附件到 .coding-agent/uploads。`,
+              text: `已保存 ${savedAttachments.length} 个附件到 .coding-agent/uploads${imageMessage}。`,
             },
           })
         }
@@ -1841,9 +1875,11 @@ async function main() {
             mcpServers: extensionRuntime.mcpServers,
             model,
             modelLabel: formatModelLabel(model),
+            images: promptImages,
             prompt: agentPrompt,
             profiles: readMultiAgentProfiles(workspaceCwd),
             sandboxOptions: options.sandboxOptions,
+            sdkStore: sdkLocalStoreForProject(activeProject.cwd),
             shellApprovalHandler: approvalQueue.createHandler(
               activeProject.id,
               activeSession.id
@@ -1856,6 +1892,7 @@ async function main() {
           activeSession.agent.addExternalSummary(summarizeMultiAgentRun(finalState))
         } else {
           await activeSession.agent.sendPrompt({
+            images: promptImages,
             instructions: extensionRuntime.instructions,
             mcpServers: extensionRuntime.mcpServers,
             prompt: agentPrompt,
@@ -3464,7 +3501,9 @@ async function main() {
 
         const cancelled = await running.multiRun.cancelTask(taskId)
         sendJson(response, {
-          message: cancelled ? "已请求取消子 Agent。" : "子 Agent 已结束或不存在。",
+          message: cancelled
+            ? "已请求取消子 Agent。"
+            : "SDK 子 Agent 不支持单独取消，或该子 Agent 已结束。",
           cancelled,
         })
         return
@@ -4924,8 +4963,11 @@ async function saveRunAttachments(
 
     const textPreview = extractAttachmentTextPreview(input.name, input.type, buffer)
     const relativePath = path.relative(cwd, absolutePath).split(path.sep).join("/")
+    const kind = attachmentKind(input.name, input.type, Boolean(textPreview.preview))
     saved.push({
-      kind: attachmentKind(input.name, input.type, Boolean(textPreview.preview)),
+      imageDataBase64: kind === "image" ? input.dataBase64 : undefined,
+      imageMimeType: kind === "image" ? imageAttachmentMimeType(input.name, input.type) : undefined,
+      kind,
       name: input.name,
       path: absolutePath,
       relativePath,
@@ -5042,7 +5084,7 @@ function buildPromptWithAttachments(
       )
     } else if (attachment.kind === "image") {
       parts.push(
-        "  - note: This is an image file saved in the workspace. Use the path above if image/file inspection is available."
+        "  - note: This image is attached directly to the SDK message and also saved at the path above for file inspection."
       )
     } else {
       parts.push(
@@ -5052,6 +5094,27 @@ function buildPromptWithAttachments(
   }
 
   return parts.join("\n")
+}
+
+function buildPromptImagesFromAttachments(
+  attachments: SavedRunAttachment[]
+): AgentPromptImage[] {
+  return attachments.flatMap((attachment) => {
+    if (
+      attachment.kind !== "image" ||
+      !attachment.imageDataBase64 ||
+      !attachment.imageMimeType
+    ) {
+      return []
+    }
+
+    return [
+      {
+        data: attachment.imageDataBase64,
+        mimeType: attachment.imageMimeType,
+      },
+    ]
+  })
 }
 
 function buildRunModePrompt(prompt: string, mode: RunSubmissionMode) {
@@ -5148,6 +5211,31 @@ function attachmentKind(name: string, mimeType: string, hasTextPreview: boolean)
   return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"].includes(extension)
     ? "image"
     : "binary"
+}
+
+function imageAttachmentMimeType(name: string, mimeType: string) {
+  const type = mimeType.toLowerCase()
+  if (type.startsWith("image/")) {
+    return type
+  }
+
+  switch (path.extname(name).toLowerCase()) {
+    case ".png":
+      return "image/png"
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg"
+    case ".gif":
+      return "image/gif"
+    case ".webp":
+      return "image/webp"
+    case ".svg":
+      return "image/svg+xml"
+    case ".bmp":
+      return "image/bmp"
+    default:
+      return ""
+  }
 }
 
 async function buildArtifactPreview(
@@ -5467,6 +5555,7 @@ function getLegacyProjectConfigFile() {
 type ProjectStoragePaths = {
   dbFile: string
   dir: string
+  sdkAgentStoreDir: string
 }
 
 function getLegacySessionStateFile() {
@@ -5483,6 +5572,7 @@ function getProjectStoragePaths(cwd: string): ProjectStoragePaths {
   return {
     dbFile: path.join(dir, "sessions.sqlite"),
     dir,
+    sdkAgentStoreDir: path.join(dir, "sdk-agent-store"),
   }
 }
 
@@ -5899,6 +5989,7 @@ async function writeProjectPersistedState(state: PersistedProjectState) {
 async function deleteProjectPersistedState(cwd: string, legacyStateFile: string) {
   const storage = getProjectStoragePaths(cwd)
   await deleteProjectAttachments(cwd)
+  await fs.rm(storage.sdkAgentStoreDir, { force: true, recursive: true })
   await Promise.all(
     [
       storage.dbFile,
@@ -6239,6 +6330,7 @@ function normalizeAgentSnapshot(value: unknown): CodingAgentSessionSnapshot {
       summaryText: contextSummary,
     }),
     model: normalizeModelSelection(record.model, { id: DEFAULT_MODEL }),
+    sdkAgentId: optionalString(record.sdkAgentId) ?? undefined,
   }
 }
 
@@ -7006,7 +7098,7 @@ Config:
 
 Options:
   -C, --cwd <path>       Startup directory for project picker shortcuts. Defaults to cwd.
-  -m, --model <id>      Model id. Defaults to CURSOR_MODEL or composer-2.
+  -m, --model <id>      Model id. Defaults to CURSOR_MODEL or composer-2.5.
       --host <host>     Host to bind. Defaults to 127.0.0.1.
       --port <port>     Port to bind. Defaults to config port, CURSOR_UI_PORT, or 3030.
       --open            Open the browser automatically after startup.

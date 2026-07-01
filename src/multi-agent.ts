@@ -2,16 +2,23 @@ import { execFileSync } from "node:child_process"
 import { setMaxListeners } from "node:events"
 import {
   Agent,
+  type AgentDefinition,
+  type AgentOptions,
+  type LocalAgentStore,
   type McpServerConfig,
   type ModelSelection,
   type Run,
   type RunResult,
   type SDKAgent,
   type SDKMessage,
+  type TextBlock,
+  type ToolUseBlock,
 } from "@cursor/sdk"
 
 import {
+  createSdkUserMessage,
   createWorkspaceCustomTools,
+  type AgentPromptImage,
   type LocalSandboxOptions,
   type TokenUsage,
 } from "./agent.js"
@@ -53,6 +60,7 @@ export type MultiAgentTaskState = {
   title: string
   dependsOn: string[]
   modelLabel: string
+  permissionBoundary?: string
   prompt: string
   status: MultiAgentTaskStatus
   resultText?: string
@@ -104,17 +112,11 @@ export type MultiAgentRunEvent = {
   state: MultiAgentRunState
 }
 
-type MultiAgentTaskPlan = {
-  id: string
-  title: string
-  dependsOn: string[]
-  prompt: string
-}
-
 type MultiAgentRunnerOptions = {
   apiKey: string
   cwd: string
   force: boolean
+  images?: AgentPromptImage[]
   instructions?: string
   mcpServers?: Record<string, McpServerConfig>
   model: ModelSelection
@@ -122,6 +124,7 @@ type MultiAgentRunnerOptions = {
   prompt: string
   profiles?: MultiAgentProfile[]
   sandboxOptions?: LocalSandboxOptions
+  sdkStore?: LocalAgentStore
   shellApprovalHandler?: ShellApprovalHandler
   workspaceRoots?: string[]
   onEvent: (event: MultiAgentRunEvent) => void
@@ -130,17 +133,12 @@ type MultiAgentRunnerOptions = {
 const MAX_TASKS = 6
 const STREAM_CAP = 5000
 const TOOL_USAGE_CAP = 30
-const UPSTREAM_SNIPPET_CAP = 2200
 const STEERING_NOTE_CAP = 2400
-const DEFAULT_TASK_TIMEOUT_MS = 20 * 60 * 1000
-const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000
-const WAIT_AFTER_STREAM_GRACE_MS = 15 * 1000
 const ABORT_SIGNAL_LISTENER_LIMIT = 100
 
 export class MultiAgentRunner {
   private readonly activeRuns = new Set<Run>()
-  private readonly activeTaskRuns = new Map<string, Run>()
-  private readonly cancelledTasks = new Set<string>()
+  private readonly sdkTaskIdsByCallId = new Map<string, string>()
   private readonly state: MultiAgentRunState
   private cancelRequested = false
   private publishTimer: NodeJS.Timeout | undefined
@@ -183,17 +181,10 @@ export class MultiAgentRunner {
       return false
     }
 
-    this.cancelledTasks.add(task.id)
-    task.status = "CANCELLED"
-    task.errorMessage = "Cancelled."
-    task.finishedAt = Date.now()
-    task.durationMs = task.startedAt ? task.finishedAt - task.startedAt : 0
-    const run = this.activeTaskRuns.get(task.id)
-    if (run) {
-      await cancelRun(run)
-    }
+    task.errorMessage =
+      "SDK subagent runs cannot be cancelled individually; cancel the whole multi-agent run instead."
     this.publish(true)
-    return true
+    return false
   }
 
   addTaskSteering(taskId: string, text: string) {
@@ -210,7 +201,7 @@ export class MultiAgentRunner {
     task.steering = [
       ...(task.steering ?? []),
       {
-        appliedToPrompt: task.status === "PENDING",
+        appliedToPrompt: false,
         createdAt: Date.now(),
         id: createEntityId("steer"),
         text: truncate(noteText, STEERING_NOTE_CAP),
@@ -222,41 +213,73 @@ export class MultiAgentRunner {
 
   async run(): Promise<MultiAgentRunState> {
     setMaxListeners(ABORT_SIGNAL_LISTENER_LIMIT)
+    const sdkSubagents = buildSdkSubagentCatalog(
+      this.options.profiles ?? [],
+      this.options.modelLabel,
+      this.options.sandboxOptions
+    )
+    const coordinator = createCoordinatorTask(this.options.modelLabel, this.options.sandboxOptions)
+    this.state.tasks = [coordinator]
+    this.state.message = "Preparing SDK subagents."
     this.publish(true)
 
+    let agent: SDKAgent | undefined
+    let run: Run | undefined
+
     try {
-      const plan = await this.createPlan()
       if (this.cancelRequested) {
         throw new CancelledError()
       }
 
-      this.state.tasks = plan.map((task): MultiAgentTaskState => ({
-        accessMode: inferTaskAccessMode(task),
-        agentName: "",
-        id: task.id,
-        title: task.title,
-        dependsOn: task.dependsOn,
-        modelLabel: this.options.modelLabel,
-        prompt: task.prompt,
-        status: "PENDING",
-      })).map((task) => {
-        const profile = this.profileForTask(task)
-        task.agentName = profile?.name ?? defaultAgentName(task.accessMode)
-        task.modelLabel = profile?.model
-          ? formatModelSelection(profile.model)
-          : this.options.modelLabel
-        return task
-      })
+      agent = await this.createSdkCoordinatorAgent(sdkSubagents.definitions)
+      if (this.cancelRequested) {
+        throw new CancelledError()
+      }
       this.state.status = "RUNNING"
-      this.state.message = `Planned ${this.state.tasks.length} subagents.`
+      this.state.message = `SDK subagents enabled: ${sdkSubagents.items
+        .map((item) => item.key)
+        .join(", ")}.`
+      coordinator.status = "RUNNING"
+      coordinator.startedAt = Date.now()
       this.publish(true)
 
-      await this.runRanks(computeRanks(this.state.tasks))
-      this.finishRun()
+      run = await agent.send(
+        createSdkUserMessage(
+          buildSdkMultiAgentPrompt({
+            instructions: this.options.instructions,
+            prompt: this.options.prompt,
+            sandboxOptions: this.options.sandboxOptions,
+            subagents: sdkSubagents.items,
+            workspaceRoots: this.options.workspaceRoots ?? [],
+          }),
+          this.options.images
+        ),
+        {
+          mode: "agent",
+          ...(this.options.mcpServers && Object.keys(this.options.mcpServers).length > 0
+            ? { mcpServers: this.options.mcpServers }
+            : {}),
+          model: this.options.model,
+          ...(this.options.force ? { local: { force: true } } : {}),
+        }
+      )
+      this.activeRuns.add(run)
+
+      for await (const event of run.stream()) {
+        if (this.cancelRequested) {
+          throw new CancelledError()
+        }
+        this.handleSdkCoordinatorEvent(event, coordinator, sdkSubagents.byKey)
+      }
+
+      const result = await run.wait()
+      this.finishSdkRun(result, coordinator)
       return this.snapshot()
     } catch (error) {
       if (this.cancelRequested) {
         this.markUnfinished("CANCELLED", "Cancelled.")
+        this.state.status = "CANCELLED"
+        this.state.message = "Cancelled."
       } else {
         this.state.status = "ERROR"
         this.state.message = getErrorMessage(error)
@@ -266,6 +289,12 @@ export class MultiAgentRunner {
       this.publish(true)
       return this.snapshot()
     } finally {
+      if (run) {
+        this.activeRuns.delete(run)
+      }
+      if (agent) {
+        await disposeAgent(agent)
+      }
       if (this.publishTimer) {
         clearTimeout(this.publishTimer)
         this.publishTimer = undefined
@@ -273,222 +302,211 @@ export class MultiAgentRunner {
     }
   }
 
-  private async createPlan(): Promise<MultiAgentTaskPlan[]> {
-    const fallback = fallbackPlan(this.options.prompt)
-
-    try {
-      const planner = await this.createAgent("Multi-agent planner")
-      let run: Run | undefined
-      let text = ""
-
-      try {
-        run = await planner.send(
-          buildPlannerPrompt(this.options.prompt, this.options.instructions),
-          {
-            mode: "agent",
-            ...(this.options.mcpServers &&
-            Object.keys(this.options.mcpServers).length > 0
-              ? { mcpServers: this.options.mcpServers }
-              : {}),
-            ...(this.options.force ? { local: { force: true } } : {}),
-          }
-        )
-        this.activeRuns.add(run)
-
-        for await (const event of run.stream()) {
-          text += assistantTextFromSdkMessage(event)
-        }
-
-        const result = await run.wait()
-        const planText = (result.result || text).trim()
-        return normalizePlan(parsePlanJson(planText))
-      } finally {
-        if (run) {
-          this.activeRuns.delete(run)
-        }
-        await disposeAgent(planner)
-      }
-    } catch (error) {
-      if (this.cancelRequested) {
-        throw new CancelledError()
-      }
-
-      this.state.message = `Planner failed; using fallback plan. ${getErrorMessage(error)}`
-      this.publish(true)
-      return fallback
-    }
-  }
-
-  private async runRanks(ranks: MultiAgentTaskState[][]) {
-    for (const rank of ranks) {
-      if (this.cancelRequested) {
-        break
-      }
-
-      for (const task of rank) {
-        const failedDeps = task.dependsOn.filter((depId) => {
-          const dep = this.findTask(depId)
-          return dep && dep.status !== "FINISHED"
-        })
-
-        if (failedDeps.length > 0) {
-          task.status = "SKIPPED"
-          task.finishedAt = Date.now()
-          task.durationMs = 0
-          task.errorMessage = `Skipped because upstream task(s) failed: ${failedDeps.join(", ")}`
-          this.publish(true)
-        }
-      }
-
-      const ready = rank.filter((task) => task.status === "PENDING")
-      const readTasks = ready.filter((task) => task.accessMode === "read")
-      const writeTasks = ready.filter((task) => task.accessMode === "write")
-      await Promise.all(readTasks.map((task) => this.runTask(task)))
-      for (const task of writeTasks) {
-        await this.runTask(task)
-      }
-    }
-  }
-
-  private async runTask(task: MultiAgentTaskState) {
-    if (this.cancelRequested) {
-      task.status = "CANCELLED"
-      task.finishedAt = Date.now()
-      this.publish(true)
+  private handleSdkCoordinatorEvent(
+    event: SDKMessage,
+    coordinator: MultiAgentTaskState,
+    subagentsByKey: Map<string, SdkSubagentCatalogItem>
+  ) {
+    if (event.type === "status") {
+      this.state.message = event.message || event.status
+      this.publish()
       return
     }
 
-    const profile = this.profileForTask(task)
-    const agent = await this.createAgent(`Multi-agent: ${task.title}`, task, profile)
-    let run: Run | undefined
-    const startedAt = Date.now()
-    const deadline = startedAt + DEFAULT_TASK_TIMEOUT_MS
-    let result: RunResult | undefined
+    if (event.type === "task") {
+      this.state.message = event.text || event.status || this.state.message
+      this.publish()
+      return
+    }
 
-    task.status = "RUNNING"
-    task.startedAt = startedAt
-    this.publish(true)
+    if (event.type === "usage") {
+      coordinator.usage = event.usage
+      this.publish()
+      return
+    }
 
-    try {
-      const prompt = buildTaskPrompt(
-        task,
-        this.state,
-        this.options.instructions,
-        this.taskSandboxOptions(task, profile),
-        profile,
-        this.options.workspaceRoots ?? []
-      )
-      run = await agent.send(prompt, {
-        mode: "agent",
-        ...(this.options.mcpServers && Object.keys(this.options.mcpServers).length > 0
-          ? { mcpServers: this.options.mcpServers }
-          : {}),
-        ...(this.options.force ? { local: { force: true } } : {}),
-      })
-      this.activeRuns.add(run)
-      this.activeTaskRuns.set(task.id, run)
-
-      const iterator = run.stream()[Symbol.asyncIterator]()
-      while (true) {
-        if (this.cancelRequested) {
-          throw new CancelledError()
-        }
-
-        const timeoutForNext = Math.min(
-          deadline - Date.now(),
-          DEFAULT_STREAM_IDLE_TIMEOUT_MS
-        )
-        if (timeoutForNext <= 0) {
-          throw new TimeoutError(
-            `Task ${task.id} exceeded ${formatDuration(DEFAULT_TASK_TIMEOUT_MS)}.`
-          )
-        }
-
-        const next = await withTimeout(
-          iterator.next(),
-          timeoutForNext,
-          `Task ${task.id} produced no stream events within ${formatDuration(timeoutForNext)}.`
-        )
-
-        if (next.done) {
-          break
-        }
-
-        const toolUsage = toolUsageFromSdkMessage(next.value)
-        if (toolUsage.length > 0) {
-          task.toolUsage = appendToolUsage(task.toolUsage, toolUsage)
-          this.publish()
-        }
-
-        const chunk = assistantTextFromSdkMessage(next.value)
-        if (chunk) {
-          task.resultText = appendBounded(task.resultText ?? "", chunk, STREAM_CAP)
-          this.publish()
-        }
+    const taskCalls = sdkSubagentToolCallsFromMessage(event)
+    if (taskCalls.length > 0) {
+      for (const call of taskCalls) {
+        this.applySdkSubagentCall(call, subagentsByKey)
       }
+      this.publish()
+    } else {
+      const toolUsage = toolUsageFromSdkMessage(event)
+      if (toolUsage.length > 0) {
+        coordinator.toolUsage = appendToolUsage(coordinator.toolUsage, toolUsage)
+        this.publish()
+      }
+    }
 
-      const waitGraceMs = Math.min(deadline - Date.now(), WAIT_AFTER_STREAM_GRACE_MS)
-      if (waitGraceMs <= 0) {
-        throw new TimeoutError(
-          `Task ${task.id} exceeded ${formatDuration(DEFAULT_TASK_TIMEOUT_MS)}.`
-        )
-      }
-
-      result = await withTimeout(
-        run.wait(),
-        waitGraceMs,
-        `Task ${task.id} did not finalize after stream completion.`
-      )
-
-      task.finishedAt = Date.now()
-      task.durationMs = task.finishedAt - startedAt
-      task.usage = (result as { usage?: TokenUsage }).usage
-      task.status = result.status === "finished" ? "FINISHED" : "ERROR"
-      if (task.status === "ERROR") {
-        task.errorMessage = `Run ${result.status}`
-      }
-      if (result.result && !task.resultText?.trim()) {
-        task.resultText = appendBounded("", result.result, STREAM_CAP)
-      }
-      task.changedFiles = readWorkspaceChangedFiles(this.options.cwd)
-    } catch (error) {
-      if (run && (isTimeoutError(error) || this.cancelRequested)) {
-        await cancelRun(run)
-      }
-
-      task.finishedAt = Date.now()
-      task.durationMs = task.finishedAt - startedAt
-      task.status =
-        error instanceof CancelledError || this.cancelledTasks.has(task.id)
-          ? "CANCELLED"
-          : "ERROR"
-      task.errorMessage =
-        task.status === "CANCELLED" ? "Cancelled." : getErrorMessage(error)
-    } finally {
-      if (run) {
-        this.activeRuns.delete(run)
-        this.activeTaskRuns.delete(task.id)
-      }
-      await disposeAgent(agent)
-      this.publish(true)
+    const chunk = assistantTextFromSdkMessage(event)
+    if (chunk) {
+      coordinator.resultText = appendBounded(coordinator.resultText ?? "", chunk, STREAM_CAP)
+      this.publish()
     }
   }
 
-  private finishRun() {
-    if (this.cancelRequested) {
+  private applySdkSubagentCall(
+    call: SdkSubagentToolCall,
+    subagentsByKey: Map<string, SdkSubagentCatalogItem>
+  ) {
+    const task = this.upsertSdkSubagentTask(call, subagentsByKey)
+    task.toolUsage = appendToolUsage(task.toolUsage, [call.toolUsage])
+
+    if (call.status === "requested" || call.status === "running") {
+      if (task.status === "PENDING") {
+        task.status = "RUNNING"
+        task.startedAt = Date.now()
+      }
+      return
+    }
+
+    task.finishedAt = Date.now()
+    task.durationMs = task.startedAt ? task.finishedAt - task.startedAt : 0
+    task.changedFiles = readWorkspaceChangedFiles(this.options.cwd)
+
+    const result = describeSdkSubagentResult(call.result)
+    if (call.status === "error" || result.errorText) {
+      task.status = "ERROR"
+      task.errorMessage = result.errorText || "SDK subagent failed."
+    } else {
+      task.status = "FINISHED"
+      task.resultText = appendBounded(task.resultText ?? "", result.resultText, STREAM_CAP)
+      if (result.durationMs !== undefined) {
+        task.durationMs = result.durationMs
+      }
+    }
+  }
+
+  private upsertSdkSubagentTask(
+    call: SdkSubagentToolCall,
+    subagentsByKey: Map<string, SdkSubagentCatalogItem>
+  ) {
+    const args = asRecord(call.args)
+    const requestedName = sdkSubagentNameFromArgs(args)
+    const catalogItem = requestedName ? subagentsByKey.get(requestedName) : undefined
+    const taskId = this.sdkTaskIdForCall(call, requestedName)
+    let task = this.findTask(taskId)
+
+    if (!task) {
+      task = {
+        accessMode: catalogItem?.accessMode ?? inferSdkSubagentAccessMode(args, requestedName),
+        agentName: catalogItem?.displayName ?? requestedName ?? "SDK subagent",
+        dependsOn: [],
+        id: taskId,
+        modelLabel: catalogItem?.modelLabel ?? this.options.modelLabel,
+        permissionBoundary:
+          catalogItem?.permissionBoundary ??
+          permissionBoundaryForMode(undefined, this.options.sandboxOptions),
+        prompt: optionalText(args.prompt) ?? summarizeToolPayload(args) ?? "",
+        status: "PENDING",
+        title: optionalText(args.description) ?? requestedName ?? "SDK subagent",
+      }
+      this.state.tasks.push(task)
+    }
+
+    task.agentName = catalogItem?.displayName ?? requestedName ?? task.agentName
+    task.prompt = optionalText(args.prompt) ?? task.prompt
+    task.permissionBoundary =
+      catalogItem?.permissionBoundary ?? task.permissionBoundary
+    task.modelLabel = catalogItem?.modelLabel ?? task.modelLabel
+    return task
+  }
+
+  private sdkTaskIdForCall(call: SdkSubagentToolCall, requestedName: string | undefined) {
+    if (call.callId) {
+      const existing = this.sdkTaskIdsByCallId.get(call.callId)
+      if (existing) {
+        return existing
+      }
+    }
+
+    const base = call.callId || requestedName || optionalText(asRecord(call.args).description) || "sdk-subagent"
+    const id = slugify(base) || createEntityId("sdk-task")
+    if (call.callId) {
+      this.sdkTaskIdsByCallId.set(call.callId, id)
+    }
+    return id
+  }
+
+  private finishSdkRun(result: RunResult, coordinator: MultiAgentTaskState) {
+    const now = Date.now()
+    coordinator.finishedAt = now
+    coordinator.durationMs = coordinator.startedAt ? now - coordinator.startedAt : 0
+    coordinator.usage = (result as { usage?: TokenUsage }).usage ?? coordinator.usage
+    if (result.result && !coordinator.resultText?.trim()) {
+      coordinator.resultText = appendBounded("", result.result, STREAM_CAP)
+    }
+
+    if (this.cancelRequested || result.status === "cancelled") {
+      coordinator.status = "CANCELLED"
       this.markUnfinished("CANCELLED", "Cancelled.")
       this.state.status = "CANCELLED"
       this.state.message = "Cancelled."
-    } else if (this.state.tasks.some((task) => task.status !== "FINISHED")) {
+    } else if (result.status !== "finished") {
+      coordinator.status = "ERROR"
+      coordinator.errorMessage = `Run ${result.status}`
+      this.markUnfinished("ERROR", coordinator.errorMessage)
       this.state.status = "ERROR"
-      this.state.message = "One or more subagents failed."
+      this.state.message = coordinator.errorMessage
+    } else if (this.state.tasks.some((task) => task.status === "ERROR")) {
+      coordinator.status = "FINISHED"
+      this.state.status = "ERROR"
+      this.state.message = "One or more SDK subagents failed."
     } else {
+      coordinator.status = "FINISHED"
       this.state.status = "FINISHED"
-      this.state.message = "All subagents finished."
+      this.state.message = "SDK subagents finished."
     }
 
-    this.state.finishedAt = Date.now()
+    for (const task of this.state.tasks) {
+      if (task.status === "RUNNING" || task.status === "PENDING") {
+        task.status =
+          this.state.status === "FINISHED"
+            ? "FINISHED"
+            : this.state.status === "CANCELLED"
+              ? "CANCELLED"
+              : "ERROR"
+        task.finishedAt = task.finishedAt ?? now
+        task.durationMs = task.startedAt ? now - task.startedAt : 0
+      }
+    }
+    coordinator.changedFiles = readWorkspaceChangedFiles(this.options.cwd)
+    this.state.finishedAt = now
     this.publish(true)
+  }
+
+  private createSdkCoordinatorAgent(
+    agents: Record<string, AgentDefinition>
+  ): Promise<SDKAgent> {
+    const customTools = sdkCustomToolsEnabled(this.options.sandboxOptions)
+      ? createWorkspaceCustomTools(
+          this.options.cwd,
+          this.options.sandboxOptions,
+          this.options.shellApprovalHandler,
+          this.options.workspaceRoots
+        )
+      : undefined
+    const options: AgentOptions = {
+      agents,
+      apiKey: this.options.apiKey,
+      mode: "agent",
+      name: "SDK multi-agent coordinator",
+      model: this.options.model,
+      ...(this.options.mcpServers && Object.keys(this.options.mcpServers).length > 0
+        ? { mcpServers: this.options.mcpServers }
+        : {}),
+      local: {
+        autoReview: sdkAutoReviewEnabled(this.options.sandboxOptions),
+        ...(customTools ? { customTools } : {}),
+        cwd: sdkLocalCwd(this.options.cwd, this.options.workspaceRoots),
+        ...(this.options.sdkStore ? { store: this.options.sdkStore } : {}),
+        ...(this.options.sandboxOptions
+          ? { sandboxOptions: sdkSandboxOptions(this.options.sandboxOptions) }
+          : {}),
+      },
+    }
+    return Agent.create(options)
   }
 
   private markUnfinished(status: MultiAgentTaskStatus, message: string) {
@@ -528,124 +546,420 @@ export class MultiAgentRunner {
     return this.state.tasks.find((task) => task.id === taskId)
   }
 
-  private profileForTask(task: Pick<MultiAgentTaskState, "accessMode">) {
-    const profiles = this.options.profiles ?? []
-    if (profiles.length === 0) {
-      return undefined
-    }
+}
 
-    const preferred = profiles.find((profile) =>
-      task.accessMode === "read"
-        ? profile.permissionMode === "read_only" || /read|review|research|scan/i.test(profile.name)
-        : profile.permissionMode !== "read_only" && /write|implement|build|fix/i.test(profile.name)
-    )
-    return preferred ?? profiles.find((profile) => profile.permissionMode !== "read_only") ?? profiles[0]
-  }
+type SdkSubagentCatalogItem = {
+  accessMode: MultiAgentTaskAccessMode
+  definition: AgentDefinition
+  displayName: string
+  key: string
+  modelLabel: string
+  permissionBoundary: string
+}
 
-  private taskSandboxOptions(
-    task: Pick<MultiAgentTaskState, "accessMode">,
-    profile?: MultiAgentProfile
-  ) {
-    if (profile?.permissionMode) {
-      return createSandboxOptionsForPermissionMode(profile.permissionMode)
-    }
-    if (task.accessMode === "read") {
-      return createSandboxOptionsForPermissionMode("read_only", true)
-    }
-    return this.options.sandboxOptions
-  }
+type SdkSubagentCatalog = {
+  byKey: Map<string, SdkSubagentCatalogItem>
+  definitions: Record<string, AgentDefinition>
+  items: SdkSubagentCatalogItem[]
+}
 
-  private createAgent(
-    name: string,
-    task?: Pick<MultiAgentTaskState, "accessMode">,
-    profile?: MultiAgentProfile
-  ): Promise<SDKAgent> {
-    const sandboxOptions = task ? this.taskSandboxOptions(task, profile) : this.options.sandboxOptions
-    const customTools = sdkCustomToolsEnabled(sandboxOptions)
-      ? createWorkspaceCustomTools(
-          this.options.cwd,
-          sandboxOptions,
-          this.options.shellApprovalHandler,
-          this.options.workspaceRoots
+type SdkSubagentToolCall = {
+  args?: unknown
+  callId?: string
+  result?: unknown
+  status: "requested" | "running" | "completed" | "error"
+  toolUsage: MultiAgentToolUsage
+}
+
+function buildSdkSubagentCatalog(
+  profiles: MultiAgentProfile[],
+  parentModelLabel: string,
+  parentSandboxOptions?: LocalSandboxOptions
+): SdkSubagentCatalog {
+  const rawItems =
+    profiles.length > 0
+      ? profiles.map((profile) =>
+          catalogItemFromProfile(profile, parentModelLabel, parentSandboxOptions)
         )
-      : undefined
-    return Agent.create({
-      apiKey: this.options.apiKey,
-      mode: "agent",
-      name: profile?.name ? `${profile.name}: ${name}` : name,
-      model: profile?.model ?? this.options.model,
-      local: {
-        autoReview: sdkAutoReviewEnabled(sandboxOptions),
-        ...(customTools ? { customTools } : {}),
-        cwd: this.options.cwd,
-        ...(sandboxOptions
-          ? { sandboxOptions: sdkSandboxOptions(sandboxOptions) }
-          : {}),
-      },
-    })
+      : defaultSdkSubagentCatalogItems(parentModelLabel, parentSandboxOptions)
+
+  const usedKeys = new Set<string>()
+  const items = rawItems.map((item) => {
+    const key = uniqueSubagentKey(item.key, usedKeys)
+    return { ...item, key }
+  })
+  const definitions = Object.fromEntries(
+    items.map((item) => [item.key, item.definition])
+  )
+
+  return {
+    byKey: new Map(items.map((item) => [item.key, item])),
+    definitions,
+    items,
   }
 }
 
-function buildPlannerPrompt(prompt: string, instructions = "") {
-  return [
-    "Create a small multi-agent execution plan for a coding task.",
-    "Return only JSON. Do not use Markdown fences.",
-    "Schema:",
-    '{"title":"short title","tasks":[{"id":"kebab-id","title":"short title","depends_on":[],"subtask_prompt":"self-contained prompt"}]}',
-    "",
-    "Rules:",
-    `- Use ${MAX_TASKS} tasks or fewer.`,
-    "- Prefer two independent read-only discovery tasks first when useful.",
-    "- Only one task should be responsible for writing implementation changes.",
-    "- Verification tasks must depend on implementation tasks.",
-    "- Every task prompt must be self-contained and mention whether it is read-only or may edit files.",
-    "- Use ASCII ids.",
-    renderProjectInstructions(instructions),
-    "",
-    "User task:",
-    prompt,
-  ].filter(Boolean).join("\n")
-}
-
-function buildTaskPrompt(
-  task: MultiAgentTaskState,
-  run: MultiAgentRunState,
-  instructions = "",
-  sandboxOptions?: LocalSandboxOptions,
-  profile?: MultiAgentProfile,
-  workspaceRoots: string[] = []
-) {
-  const upstream = buildUpstreamContext(task, run)
-  return [
-    "You are one subagent in a local multi-agent coding run.",
-    `Overall task: ${run.prompt}`,
-    `Subtask id: ${task.id}`,
-    `Subtask title: ${task.title}`,
-    `Access mode: ${task.accessMode === "read" ? "read-only" : "write-capable"}`,
-    `Agent profile: ${task.agentName}`,
-    profile?.description ? `Profile description: ${profile.description}` : "",
+function catalogItemFromProfile(
+  profile: MultiAgentProfile,
+  parentModelLabel: string,
+  parentSandboxOptions?: LocalSandboxOptions
+): SdkSubagentCatalogItem {
+  const permissionMode = profile.permissionMode
+  const accessMode =
+    permissionMode === "read_only" || /read|review|research|scan/i.test(profile.name)
+      ? "read"
+      : "write"
+  const sandboxOptions = permissionMode
+    ? createSandboxOptionsForPermissionMode(permissionMode, permissionMode === "read_only")
+    : parentSandboxOptions
+  const displayName = profile.name.trim() || defaultAgentName(accessMode)
+  const description =
+    profile.description?.trim() ||
+    (accessMode === "read"
+      ? "Use for read-only investigation, review, and analysis."
+      : "Use for implementation, verification, and other write-capable work.")
+  const prompt = [
+    `You are the ${displayName} SDK subagent.`,
+    description,
     "",
     permissionInstructions(sandboxOptions),
-    profile?.instructions ? ["", "Profile instructions:", profile.instructions].join("\n") : "",
+    profile.instructions ? ["", "Profile instructions:", profile.instructions].join("\n") : "",
     "",
-    "Coordination rules:",
-    "- Focus only on this subtask.",
-    workspaceAccessInstructions(sandboxOptions, workspaceRoots),
-    "- Preserve unrelated user work.",
-    "- Only edit files if this subtask explicitly asks for implementation or file changes.",
-    "- If this is a read-only task, inspect and report findings without changing files.",
-    "- If this is a write-capable task, keep edits focused and summarize changed files.",
-    "- End with a concise result summary, including files changed or commands run when relevant.",
-    renderProjectInstructions(instructions),
-    "",
-    upstream,
-    buildTaskSteering(task),
-    "",
-    "Subtask prompt:",
-    task.prompt,
+    "Follow the parent coordinator's task prompt exactly. Keep the response concise and include files changed, commands run, failures, and remaining risks when relevant.",
   ]
     .filter(Boolean)
     .join("\n")
+
+  return {
+    accessMode,
+    definition: {
+      description,
+      model: profile.model ?? "inherit",
+      prompt,
+    },
+    displayName,
+    key: slugify(displayName) || defaultSdkSubagentKey(accessMode),
+    modelLabel: profile.model ? formatModelSelection(profile.model) : parentModelLabel,
+    permissionBoundary: permissionBoundaryForMode(permissionMode, parentSandboxOptions),
+  }
+}
+
+function defaultSdkSubagentCatalogItems(
+  parentModelLabel: string,
+  parentSandboxOptions?: LocalSandboxOptions
+): SdkSubagentCatalogItem[] {
+  return [
+    defaultSdkSubagentCatalogItem({
+      accessMode: "read",
+      description:
+        "Use for read-only workspace discovery, code review, risk analysis, and validation planning.",
+      displayName: "Read-only reviewer",
+      key: "read-only-reviewer",
+      parentModelLabel,
+      parentSandboxOptions,
+      permissionMode: "read_only",
+      promptLines: [
+        "Inspect and report only. Do not edit files, write patches, install packages, start servers, or run validation commands unless the coordinator explicitly asks for a non-mutating inspection command.",
+        "Return concise findings, exact paths, and risks.",
+      ],
+    }),
+    defaultSdkSubagentCatalogItem({
+      accessMode: "write",
+      description:
+        "Use for focused implementation work that may edit files in the configured workspace roots.",
+      displayName: "Implementation writer",
+      key: "implementation-writer",
+      parentModelLabel,
+      parentSandboxOptions,
+      permissionMode: undefined,
+      promptLines: [
+        "Make only the requested edits and preserve unrelated user work.",
+        "Summarize changed files and commands actually run.",
+      ],
+    }),
+    defaultSdkSubagentCatalogItem({
+      accessMode: "write",
+      description:
+        "Use for targeted verification, test execution, build/typecheck checks, and small follow-up fixes when required.",
+      displayName: "Verification runner",
+      key: "verification-runner",
+      parentModelLabel,
+      parentSandboxOptions,
+      permissionMode: "auto",
+      promptLines: [
+        "Run relevant validation when practical. Only edit files for small fixes clearly required by failed checks.",
+        "Report exact commands, results, and residual risk.",
+      ],
+    }),
+  ]
+}
+
+function defaultSdkSubagentCatalogItem(options: {
+  accessMode: MultiAgentTaskAccessMode
+  description: string
+  displayName: string
+  key: string
+  parentModelLabel: string
+  parentSandboxOptions?: LocalSandboxOptions
+  permissionMode?: PermissionMode
+  promptLines: string[]
+}): SdkSubagentCatalogItem {
+  const sandboxOptions = options.permissionMode
+    ? createSandboxOptionsForPermissionMode(
+        options.permissionMode,
+        options.permissionMode === "read_only"
+      )
+    : options.parentSandboxOptions
+  return {
+    accessMode: options.accessMode,
+    definition: {
+      description: options.description,
+      model: "inherit",
+      prompt: [
+        `You are the ${options.displayName} SDK subagent.`,
+        options.description,
+        "",
+        permissionInstructions(sandboxOptions),
+        "",
+        ...options.promptLines,
+      ].join("\n"),
+    },
+    displayName: options.displayName,
+    key: options.key,
+    modelLabel: options.parentModelLabel,
+    permissionBoundary: permissionBoundaryForMode(
+      options.permissionMode,
+      options.parentSandboxOptions
+    ),
+  }
+}
+
+function createCoordinatorTask(
+  modelLabel: string,
+  sandboxOptions?: LocalSandboxOptions
+): MultiAgentTaskState {
+  return {
+    accessMode: "write",
+    agentName: "SDK coordinator",
+    dependsOn: [],
+    id: "sdk-coordinator",
+    modelLabel,
+    permissionBoundary: permissionBoundaryForMode(undefined, sandboxOptions),
+    prompt: "Coordinate the overall request and delegate work through Cursor SDK subagents.",
+    status: "PENDING",
+    title: "SDK coordinator",
+  }
+}
+
+function buildSdkMultiAgentPrompt(options: {
+  instructions?: string
+  prompt: string
+  sandboxOptions?: LocalSandboxOptions
+  subagents: SdkSubagentCatalogItem[]
+  workspaceRoots: string[]
+}) {
+  return [
+    "You are the coordinator for a Cursor SDK native multi-agent run.",
+    "Use the SDK Task tool with the configured custom subagents for substantive independent work. Do not implement a separate JSON planner.",
+    'When delegating, set Task args mode to "agent" and subagentType to {"kind":"custom","name":"<subagent key>"} using one of the exact keys below.',
+    `Use ${MAX_TASKS} subagent calls or fewer unless the user explicitly asks for more.`,
+    "Prefer read-only subagents for discovery/review before write-capable implementation when that helps.",
+    "Keep write-capable work coordinated so two subagents do not edit the same files at the same time.",
+    "After subagents finish, synthesize their results and include changed files, commands run, failures, and remaining risk.",
+    "",
+    "Available SDK subagents:",
+    ...options.subagents.map((item) =>
+      [
+        `- ${item.key}: ${item.definition.description}`,
+        `  display: ${item.displayName}`,
+        `  access: ${item.accessMode === "read" ? "read-only requested" : "write-capable"}`,
+        `  permission boundary: ${item.permissionBoundary}`,
+      ].join("\n")
+    ),
+    "",
+    permissionInstructions(options.sandboxOptions),
+    "",
+    workspaceAccessInstructions(options.sandboxOptions, options.workspaceRoots),
+    renderProjectInstructions(options.instructions),
+    "",
+    "User task:",
+    options.prompt,
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function sdkSubagentToolCallsFromMessage(event: SDKMessage): SdkSubagentToolCall[] {
+  if (event.type === "assistant") {
+    return event.message.content
+      .filter(isSdkSubagentToolUseBlock)
+      .map((block) => ({
+        args: block.input,
+        callId: block.id,
+        status: "requested" as const,
+        toolUsage: {
+          callId: block.id,
+          name: block.name,
+          params: summarizeToolPayload(block.input),
+          status: "requested",
+        },
+      }))
+  }
+
+  if (event.type === "tool_call" && isSdkSubagentToolName(event.name)) {
+    return [
+      {
+        args: event.args,
+        callId: event.call_id,
+        result: event.result,
+        status: event.status,
+        toolUsage: {
+          callId: event.call_id,
+          name: event.name,
+          params: summarizeToolPayload(event.args),
+          result: summarizeToolPayload(event.result),
+          status: event.status,
+        },
+      },
+    ]
+  }
+
+  return []
+}
+
+function isSdkSubagentToolUseBlock(
+  block: TextBlock | ToolUseBlock
+): block is ToolUseBlock {
+  return block.type === "tool_use" && isSdkSubagentToolName(block.name)
+}
+
+function isSdkSubagentToolName(name: string | undefined) {
+  const value = name?.trim().toLowerCase()
+  return value === "task" || value === "agent" || value === "subagent"
+}
+
+function sdkSubagentNameFromArgs(args: Record<string, unknown>) {
+  const subagentType = asRecord(args.subagentType)
+  const name = optionalText(subagentType.name)
+  const kind = optionalText(subagentType.kind)
+  if (name) {
+    return name
+  }
+  if (kind && kind !== "custom") {
+    return kind
+  }
+  return (
+    optionalText(args.subagentType) ??
+    optionalText(args.agentName) ??
+    optionalText(args.agent)
+  )
+}
+
+function inferSdkSubagentAccessMode(
+  args: Record<string, unknown>,
+  requestedName: string | undefined
+): MultiAgentTaskAccessMode {
+  const text = [
+    requestedName,
+    optionalText(args.description),
+    optionalText(args.prompt),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase()
+  return /read|review|research|scan|inspect|analysis|do not edit|read-only/.test(text)
+    ? "read"
+    : "write"
+}
+
+function describeSdkSubagentResult(result: unknown) {
+  const record = asRecord(result)
+  const value = asRecord(record.value)
+  const success = asRecord(record.success)
+  const resultValue = Object.keys(value).length > 0 ? value : success
+  const explicitError =
+    optionalText(record.error) ??
+    optionalText(record.errorMessage) ??
+    optionalText(asRecord(record.failure).message)
+  const errorText =
+    optionalText(record.status) === "error"
+      ? summarizeToolPayload(record.error) || explicitError || "SDK subagent failed."
+      : explicitError
+
+  if (errorText) {
+    return {
+      errorText,
+      resultText: "",
+    }
+  }
+
+  const durationMs =
+    optionalNumber(resultValue.durationMs) ?? optionalNumber(record.durationMs)
+  const detailLines = [
+    optionalText(resultValue.resultSuffix) ?? optionalText(record.resultSuffix),
+    optionalText(resultValue.agentId)
+      ? `agentId: ${optionalText(resultValue.agentId)}`
+      : undefined,
+    optionalText(resultValue.transcriptPath)
+      ? `transcript: ${optionalText(resultValue.transcriptPath)}`
+      : undefined,
+  ].filter((line): line is string => Boolean(line))
+  const resultText =
+    detailLines.join("\n") ||
+    optionalText(record.result) ||
+    summarizeToolPayload(result) ||
+    "SDK subagent completed."
+
+  return {
+    durationMs,
+    resultText,
+  }
+}
+
+function permissionBoundaryForMode(
+  requestedMode: PermissionMode | undefined,
+  parentSandboxOptions?: LocalSandboxOptions
+) {
+  const parentMode = parentSandboxOptions?.permissionMode ?? "full_access"
+  const requested = requestedMode ?? parentMode
+  const hard =
+    requested === parentMode
+      ? `hard parent sandbox: ${parentMode}`
+      : `requested ${requested}; hard parent sandbox: ${parentMode}`
+  return `${hard}. SDK subagents inherit the coordinator's tool boundary.`
+}
+
+function uniqueSubagentKey(key: string, usedKeys: Set<string>) {
+  const base = slugify(key) || "sdk-subagent"
+  let candidate = base
+  let suffix = 2
+  while (usedKeys.has(candidate)) {
+    candidate = `${base}-${suffix}`
+    suffix += 1
+  }
+  usedKeys.add(candidate)
+  return candidate
+}
+
+function defaultSdkSubagentKey(accessMode: MultiAgentTaskAccessMode) {
+  return accessMode === "read" ? "read-only-reviewer" : "implementation-writer"
+}
+
+function sdkLocalCwd(primaryRoot: string, workspaceRoots?: string[]) {
+  const roots: string[] = []
+  const addRoot = (root: string | undefined) => {
+    const value = root?.trim()
+    if (value && !roots.includes(value)) {
+      roots.push(value)
+    }
+  }
+
+  addRoot(primaryRoot)
+  for (const root of workspaceRoots ?? []) {
+    addRoot(root)
+  }
+
+  return roots.length > 1 ? roots : roots[0] ?? primaryRoot
 }
 
 function workspaceAccessInstructions(
@@ -682,18 +996,6 @@ function workspaceAccessInstructions(
   return lines.join("\n")
 }
 
-function buildTaskSteering(task: MultiAgentTaskState) {
-  const notes = (task.steering ?? []).filter((note) => note.appliedToPrompt)
-  if (notes.length === 0) {
-    return ""
-  }
-
-  return [
-    "Additional user steering for this subtask:",
-    ...notes.map((note) => `- ${note.text}`),
-  ].join("\n")
-}
-
 function renderProjectInstructions(instructions = "") {
   const text = instructions.trim()
   if (!text) {
@@ -707,216 +1009,6 @@ function renderProjectInstructions(instructions = "") {
     "",
     "Follow these project instructions unless they conflict with higher-priority system or developer instructions.",
   ].join("\n")
-}
-
-function buildUpstreamContext(task: MultiAgentTaskState, run: MultiAgentRunState) {
-  if (task.dependsOn.length === 0) {
-    return ""
-  }
-
-  const lines = ["Upstream task results:"]
-  for (const depId of task.dependsOn) {
-    const dep = run.tasks.find((item) => item.id === depId)
-    if (!dep) {
-      continue
-    }
-
-    lines.push("")
-    lines.push(`## ${dep.id} (${dep.status})`)
-    lines.push(
-      truncate(
-        dep.resultText || dep.errorMessage || "No result text.",
-        UPSTREAM_SNIPPET_CAP
-      )
-    )
-  }
-
-  return lines.join("\n")
-}
-
-function parsePlanJson(text: string) {
-  const source = text.trim()
-  try {
-    return JSON.parse(source)
-  } catch {}
-
-  const json = extractBalancedJsonObject(source)
-  if (!json) {
-    throw new Error("Planner did not return a JSON object.")
-  }
-
-  return JSON.parse(json)
-}
-
-function extractBalancedJsonObject(text: string) {
-  const start = text.indexOf("{")
-  if (start === -1) {
-    return ""
-  }
-
-  let depth = 0
-  let inString = false
-  let escaped = false
-  for (let index = start; index < text.length; index += 1) {
-    const char = text[index]
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (char === "\\") {
-      escaped = true
-      continue
-    }
-    if (char === '"') {
-      inString = !inString
-      continue
-    }
-    if (inString) {
-      continue
-    }
-    if (char === "{") {
-      depth += 1
-    } else if (char === "}") {
-      depth -= 1
-      if (depth === 0) {
-        return text.slice(start, index + 1)
-      }
-    }
-  }
-
-  return ""
-}
-
-function normalizePlan(raw: unknown): MultiAgentTaskPlan[] {
-  const record = asRecord(raw)
-  const rawTasks = Array.isArray(record.tasks) ? record.tasks : []
-  const tasks = rawTasks
-    .slice(0, MAX_TASKS)
-    .map(normalizeTaskPlan)
-    .filter((task): task is MultiAgentTaskPlan => Boolean(task))
-
-  if (tasks.length === 0) {
-    throw new Error("Planner returned no tasks.")
-  }
-
-  const ids = new Set<string>()
-  for (const task of tasks) {
-    if (ids.has(task.id)) {
-      throw new Error(`Planner returned duplicate task id: ${task.id}`)
-    }
-    ids.add(task.id)
-  }
-
-  for (const task of tasks) {
-    task.dependsOn = task.dependsOn.filter((depId) => ids.has(depId) && depId !== task.id)
-  }
-
-  detectCycle(tasks)
-  return tasks
-}
-
-function normalizeTaskPlan(raw: unknown): MultiAgentTaskPlan | null {
-  const record = asRecord(raw)
-  const id = slugify(optionalString(record.id) ?? optionalString(record.title) ?? "")
-  const prompt =
-    optionalString(record.subtask_prompt) ??
-    optionalString(record.prompt) ??
-    optionalString(record.task)
-  if (!id || !prompt) {
-    return null
-  }
-
-  const dependsRaw = Array.isArray(record.depends_on)
-    ? record.depends_on
-    : Array.isArray(record.dependsOn)
-      ? record.dependsOn
-      : []
-
-  return {
-    id,
-    title: optionalString(record.title) ?? titleFromPrompt(prompt),
-    dependsOn: dependsRaw
-      .filter((value): value is string => typeof value === "string")
-      .map(slugify)
-      .filter(Boolean),
-    prompt,
-  }
-}
-
-function fallbackPlan(prompt: string): MultiAgentTaskPlan[] {
-  return [
-    {
-      id: "context-scan",
-      title: "Context scan",
-      dependsOn: [],
-      prompt: [
-        "Read-only task. Inspect the relevant project structure and code paths for the requested change.",
-        "Do not edit files. Return concise findings, likely files to touch, and risks.",
-        "",
-        `Requested change: ${prompt}`,
-      ].join("\n"),
-    },
-    {
-      id: "test-scan",
-      title: "Validation scan",
-      dependsOn: [],
-      prompt: [
-        "Read-only task. Identify available tests, build commands, lint/typecheck commands, and validation gaps.",
-        "Do not edit files. Return the exact commands that should be run after implementation.",
-        "",
-        `Requested change: ${prompt}`,
-      ].join("\n"),
-    },
-    {
-      id: "implementation-plan",
-      title: "Implementation plan",
-      dependsOn: ["context-scan", "test-scan"],
-      prompt: [
-        "Read-only task. Combine upstream findings into a concise implementation plan.",
-        "Do not edit files. Call out file ownership, order of edits, and validation steps.",
-        "",
-        `Requested change: ${prompt}`,
-      ].join("\n"),
-    },
-    {
-      id: "implement",
-      title: "Implement",
-      dependsOn: ["implementation-plan"],
-      prompt: [
-        "Implementation task. Make the requested code changes in the workspace.",
-        "Keep the change scoped and preserve unrelated user work.",
-        "",
-        `Requested change: ${prompt}`,
-      ].join("\n"),
-    },
-    {
-      id: "verify",
-      title: "Verify",
-      dependsOn: ["implement"],
-      prompt: [
-        "Verification task. Run the relevant checks found earlier if practical, inspect the resulting diff, and report remaining risk.",
-        "Only edit files if a small fix is clearly required by a failed check.",
-        "",
-        `Requested change: ${prompt}`,
-      ].join("\n"),
-    },
-  ]
-}
-
-function inferTaskAccessMode(task: MultiAgentTaskPlan): MultiAgentTaskAccessMode {
-  const text = `${task.title}\n${task.prompt}`.toLowerCase()
-  if (
-    /\bread[-\s]?only\b/.test(text) ||
-    /do not edit|without changing files|inspect and report|analysis task|validation scan/.test(text)
-  ) {
-    return "read"
-  }
-  if (
-    /implement|edit files|may edit|write-capable|make .*changes|fix|modify|update|create files/.test(text)
-  ) {
-    return "write"
-  }
-  return "read"
 }
 
 function defaultAgentName(accessMode: MultiAgentTaskAccessMode) {
@@ -949,105 +1041,6 @@ function readWorkspaceChangedFiles(cwd: string) {
   } catch {
     return []
   }
-}
-
-function computeRanks(tasks: MultiAgentTaskState[]): MultiAgentTaskState[][] {
-  const remaining = new Map<string, number>()
-  const byId = new Map<string, MultiAgentTaskState>()
-  const dependents = new Map<string, string[]>()
-
-  for (const task of tasks) {
-    remaining.set(task.id, task.dependsOn.length)
-    byId.set(task.id, task)
-    dependents.set(task.id, [])
-  }
-
-  for (const task of tasks) {
-    for (const depId of task.dependsOn) {
-      dependents.get(depId)?.push(task.id)
-    }
-  }
-
-  const ranks: MultiAgentTaskState[][] = []
-  let frontier = tasks.filter((task) => remaining.get(task.id) === 0)
-
-  while (frontier.length > 0) {
-    ranks.push(frontier)
-    const next: MultiAgentTaskState[] = []
-    for (const task of frontier) {
-      for (const childId of dependents.get(task.id) ?? []) {
-        const count = (remaining.get(childId) ?? 0) - 1
-        remaining.set(childId, count)
-        if (count === 0) {
-          const child = byId.get(childId)
-          if (child) {
-            next.push(child)
-          }
-        }
-      }
-    }
-    frontier = next
-  }
-
-  if (ranks.reduce((count, rank) => count + rank.length, 0) !== tasks.length) {
-    throw new Error("Multi-agent task graph contains a cycle.")
-  }
-
-  return ranks
-}
-
-function detectCycle(tasks: MultiAgentTaskPlan[]) {
-  const byId = new Map(tasks.map((task) => [task.id, task]))
-  const visiting = new Set<string>()
-  const visited = new Set<string>()
-
-  const visit = (taskId: string) => {
-    if (visited.has(taskId)) {
-      return
-    }
-    if (visiting.has(taskId)) {
-      throw new Error(`Planner returned a cycle at ${taskId}.`)
-    }
-
-    visiting.add(taskId)
-    for (const depId of byId.get(taskId)?.dependsOn ?? []) {
-      visit(depId)
-    }
-    visiting.delete(taskId)
-    visited.add(taskId)
-  }
-
-  for (const task of tasks) {
-    visit(task.id)
-  }
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  message: string
-): Promise<T> {
-  let timer: NodeJS.Timeout | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new TimeoutError(message)), timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timer) {
-      clearTimeout(timer)
-    }
-  }
-}
-
-async function cancelRun(run: Run) {
-  if (!supportsRunCancel(run)) {
-    return
-  }
-
-  await run.cancel().catch(() => undefined)
 }
 
 function supportsRunCancel(run: Run): run is Run & { cancel: () => Promise<void> } {
@@ -1135,6 +1128,10 @@ function optionalText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
+function optionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 async function disposeAgent(agent: SDKAgent) {
   const disposable = agent as unknown as {
     [Symbol.asyncDispose]?: () => Promise<void>
@@ -1159,10 +1156,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {}
 }
 
-function optionalString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null
-}
-
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -1180,13 +1173,6 @@ function truncate(text: string, cap: number) {
   return text.length <= cap ? text : `${text.slice(0, cap)}\n[...truncated...]`
 }
 
-function formatDuration(ms: number) {
-  if (ms < 1000) {
-    return `${ms}ms`
-  }
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -1197,20 +1183,9 @@ function createEntityId(prefix: string) {
     .slice(2, 8)}`
 }
 
-class TimeoutError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "TimeoutError"
-  }
-}
-
 class CancelledError extends Error {
   constructor() {
     super("Cancelled.")
     this.name = "CancelledError"
   }
-}
-
-function isTimeoutError(error: unknown) {
-  return error instanceof TimeoutError
 }
