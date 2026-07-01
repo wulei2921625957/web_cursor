@@ -1,20 +1,38 @@
 export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria-label="API Key 登录">
-    <form class="auth-panel" id="authForm">
-      <div class="auth-brand">Coding Agent</div>
-      <h1>输入 API Key</h1>
-      <p>验证密钥并加载可用模型后进入工作台。</p>
-      <label>
-        <span>CURSOR_API_KEY</span>
-        <input id="authApiKey" type="password" autocomplete="off" placeholder="crsr_...">
-      </label>
-      <label class="check" id="authSaveKeyRow">
-        <input id="authSaveKey" type="checkbox">
-        <span>保存到项目，下次自动加载</span>
-      </label>
-      <button id="authSubmitBtn" class="primary" type="submit">进入</button>
-      <div class="toast" id="authToast"></div>
-      <div class="auth-status" id="authStatus" role="status" aria-live="polite">等待输入密钥</div>
-    </form>
+    <div class="auth-shell">
+      <div class="auth-intro">
+        <div class="auth-brand">
+          <span class="auth-brand-mark" aria-hidden="true">CA</span>
+          <span>Coding Agent</span>
+        </div>
+        <h1>本地 Agent 工作台</h1>
+        <p>连接 Cursor SDK 后，打开项目、提交任务、查看变更审查都在这里完成。</p>
+        <div class="auth-highlights" aria-label="工作台能力">
+          <div><strong>Local</strong><span>会话默认完全访问</span></div>
+          <div><strong>Review</strong><span>变更审查和撤销</span></div>
+          <div><strong>Tools</strong><span>附件、终端、浏览器</span></div>
+        </div>
+      </div>
+
+      <form class="auth-panel" id="authForm">
+        <div class="auth-panel-head">
+          <div class="auth-kicker">CURSOR_API_KEY</div>
+          <h2>输入 API Key</h2>
+          <p>验证密钥并加载可用模型后进入工作台。</p>
+        </div>
+        <label class="auth-field">
+          <span>API Key</span>
+          <input id="authApiKey" type="password" autocomplete="off" placeholder="crsr_...">
+        </label>
+        <label class="check auth-save" id="authSaveKeyRow">
+          <input id="authSaveKey" type="checkbox">
+          <span>保存到项目，下次自动加载</span>
+        </label>
+        <button id="authSubmitBtn" class="primary" type="submit">进入工作台</button>
+        <div class="toast" id="authToast"></div>
+        <div class="auth-status" id="authStatus" role="status" aria-live="polite">等待输入密钥</div>
+      </form>
+    </div>
   </section>
 
   <div class="app-shell" aria-hidden="true">

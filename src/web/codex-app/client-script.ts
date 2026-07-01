@@ -914,7 +914,7 @@ export const codexAppClientScript = `    const els = {
       els.authApiKey.disabled = authBusy
       els.authSaveKey.disabled = authBusy || !canPersistApiKey
       els.authSubmitBtn.classList.toggle("loading", authBusy)
-      els.authSubmitBtn.textContent = authBusy ? "正在验证" : "进入"
+      els.authSubmitBtn.textContent = authBusy ? "正在验证" : "进入工作台"
       els.authStatus.classList.toggle("loading", authBusy)
       els.newSessionBtn.disabled = !hasProject || !modelsLoaded
       els.newWorktreeSessionBtn.disabled = !hasProject || !modelsLoaded || busy

@@ -157,7 +157,8 @@ export function permissionInstructions(options: LocalSandboxOptions | undefined)
     )
   } else if (mode === "auto") {
     lines.push(
-      "- Low-risk read and validation shell commands are allowed.",
+      "- Low-risk read and validation shell commands are allowed when the current task scope calls for them.",
+      "- Allowed validation commands are not automatic; do not run tests, typecheck, build, start servers, or other validation/runtime commands for read-only analysis unless the user explicitly asks.",
       "- Medium or high-risk workspace_shell commands require user approval in the UI.",
       "- SDK built-in local tool calls use Cursor SDK Auto-review when the connected backend supports it.",
       "- Prefer narrow commands in the active workspace."
