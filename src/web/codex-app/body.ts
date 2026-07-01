@@ -67,7 +67,16 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
         </label>
       </div>
 
-      <div class="sidebar-heading">项目</div>
+      <div class="sidebar-heading">
+        <div class="sidebar-heading-title">
+          <span>项目</span>
+          <span class="sidebar-heading-chevron" aria-hidden="true">⌄</span>
+        </div>
+        <div class="sidebar-heading-actions" aria-hidden="true">
+          <span>↙</span>
+          <span>…</span>
+        </div>
+      </div>
       <div class="project-list" id="projectList"></div>
 
       <div class="sidebar-bottom"></div>

@@ -1189,6 +1189,24 @@ export const codexAppClientScript = `    const els = {
       return value.toFixed(1).replace(/\\.0$/, "")
     }
 
+    function formatRelativeSessionTime(value) {
+      const timestamp =
+        typeof value === "number" ? value : typeof value === "string" ? Date.parse(value) : 0
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return ""
+      const diffMs = Math.max(0, Date.now() - timestamp)
+      const minute = 60 * 1000
+      const hour = 60 * minute
+      const day = 24 * hour
+      const month = 30 * day
+      const year = 365 * day
+      if (diffMs < minute) return "刚刚"
+      if (diffMs < hour) return Math.floor(diffMs / minute) + " 分"
+      if (diffMs < day) return Math.floor(diffMs / hour) + " 小时"
+      if (diffMs < month) return Math.floor(diffMs / day) + " 天"
+      if (diffMs < year) return Math.floor(diffMs / month) + " 月"
+      return Math.floor(diffMs / year) + " 年"
+    }
+
     function visibleProjectSessions(sessions) {
       const query = els.sessionSearch.value.trim().toLowerCase()
       const showArchived = els.sessionShowArchived.checked
@@ -1248,11 +1266,12 @@ export const codexAppClientScript = `    const els = {
         projectButton.type = "button"
         projectButton.className =
           "project-row" + (project.id === state.activeProjectId ? " active" : "")
+        projectButton.title = project.cwd || project.name
         projectButton.addEventListener("click", () => selectProject(project.id))
 
         const icon = document.createElement("span")
         icon.className = "icon"
-        icon.textContent = "▣"
+        icon.textContent = "▤"
         projectButton.appendChild(icon)
 
         const projectText = document.createElement("span")
@@ -1260,11 +1279,7 @@ export const codexAppClientScript = `    const els = {
         const title = document.createElement("span")
         title.className = "project-title"
         title.textContent = project.name
-        const path = document.createElement("span")
-        path.className = "project-path"
-        path.textContent = project.cwd
         projectText.appendChild(title)
-        projectText.appendChild(path)
         projectButton.appendChild(projectText)
 
         const deleteProjectButton = document.createElement("button")
@@ -1308,15 +1323,14 @@ export const codexAppClientScript = `    const els = {
               (isSessionRunning(session.id) ? " running" : "") +
               (session.pinned ? " pinned" : "") +
               (session.archived ? " archived" : "")
+            sessionButton.title = session.title
             sessionButton.addEventListener("click", () => selectSession(session.id))
-            const marker = document.createElement("span")
-            marker.className = "icon"
-            marker.textContent = isSessionRunning(session.id) ? "●" : session.pinned ? "★" : "·"
+            const sessionMain = document.createElement("span")
+            sessionMain.className = "session-main"
             const label = document.createElement("span")
             label.className = "session-title"
             label.textContent = session.title
-            sessionButton.appendChild(marker)
-            sessionButton.appendChild(label)
+            sessionMain.appendChild(label)
             if (
               session.workspaceMode === "worktree" ||
               sessionWorkspaceOutsideProject(session, project)
@@ -1328,8 +1342,13 @@ export const codexAppClientScript = `    const els = {
                 session.workspaceMode === "worktree"
                   ? session.workspaceCwd || "Worktree"
                   : "实际 workspace：" + (session.workspaceCwd || "")
-              sessionButton.appendChild(badge)
+              sessionMain.appendChild(badge)
             }
+            const time = document.createElement("span")
+            time.className = "session-time"
+            time.textContent = formatRelativeSessionTime(session.updatedAt || session.createdAt)
+            sessionButton.appendChild(sessionMain)
+            sessionButton.appendChild(time)
 
             const pinButton = document.createElement("button")
             pinButton.type = "button"
@@ -1347,7 +1366,12 @@ export const codexAppClientScript = `    const els = {
             archiveButton.className = "session-archive"
             archiveButton.title = session.archived ? "恢复会话" : "归档会话"
             archiveButton.setAttribute("aria-label", archiveButton.title + " " + session.title)
-            archiveButton.textContent = session.archived ? "还" : "归"
+            archiveButton.innerHTML =
+              '<svg class="session-archive-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+              '<rect x="4" y="5" width="16" height="4" rx="1.4"></rect>' +
+              '<path d="M5.5 9h13v9.5a1.5 1.5 0 0 1-1.5 1.5H7a1.5 1.5 0 0 1-1.5-1.5V9Z"></path>' +
+              '<path d="M9 13h6"></path>' +
+              '</svg>'
             archiveButton.disabled = isSessionRunning(session.id)
             archiveButton.addEventListener("click", (event) => {
               event.stopPropagation()
@@ -1366,10 +1390,14 @@ export const codexAppClientScript = `    const els = {
               void deleteSession(session.id, session.title)
             })
 
+            const sessionActions = document.createElement("div")
+            sessionActions.className = "session-actions"
+            sessionActions.appendChild(pinButton)
+            sessionActions.appendChild(archiveButton)
+            sessionActions.appendChild(deleteButton)
+
             sessionItem.appendChild(sessionButton)
-            sessionItem.appendChild(pinButton)
-            sessionItem.appendChild(archiveButton)
-            sessionItem.appendChild(deleteButton)
+            sessionItem.appendChild(sessionActions)
             sessions.appendChild(sessionItem)
           }
         }

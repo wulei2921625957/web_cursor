@@ -486,7 +486,7 @@ export const codexAppStyles = `    :root {
       flex-direction: column;
       border-right: 1px solid var(--border);
       background: var(--sidebar);
-      padding: 12px 10px;
+      padding: 12px 12px 14px;
     }
 
     .window-dots {
@@ -557,10 +557,36 @@ export const codexAppStyles = `    :root {
     }
 
     .sidebar-heading {
-      margin: 12px 10px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 12px 8px 10px;
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 650;
+    }
+
+    .sidebar-heading-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 16px;
+      font-weight: 640;
+      letter-spacing: 0;
+    }
+
+    .sidebar-heading-chevron {
+      color: var(--faint);
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .sidebar-heading-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 15px;
+      line-height: 1;
     }
 
     .open-project {
@@ -615,56 +641,75 @@ export const codexAppStyles = `    :root {
     .project-list {
       min-height: 0;
       overflow: auto;
-      padding: 0 0 12px;
+      padding: 0 0 14px;
+      scrollbar-gutter: stable;
     }
 
     .project-group {
       display: grid;
-      gap: 2px;
-      margin-bottom: 8px;
+      gap: 6px;
+      margin-bottom: 18px;
     }
 
     .project-item {
-      display: flex;
+      position: relative;
+      display: block;
       min-width: 0;
-      align-items: center;
-      gap: 2px;
     }
 
     .project-row {
       flex: 1;
       min-height: 38px;
       min-width: 0;
-      border-radius: 8px;
-      padding: 5px 10px;
+      border-radius: 11px;
+      padding: 5px 38px 5px 8px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 650;
     }
 
     .project-item .project-row {
-      width: auto;
+      width: 100%;
     }
 
-    .project-row.active,
+    .project-row:hover:not(:disabled),
+    .session-row:hover:not(:disabled) {
+      background: var(--hover);
+    }
+
     .session-row.active {
       background: var(--selected);
     }
 
-    .session-row.running .icon {
-      color: var(--accent);
-      font-size: 10px;
+    .session-row.running .session-title::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      vertical-align: middle;
     }
 
     .session-row.running .session-title {
+      color: var(--accent);
+    }
+
+    .session-row.running .session-time {
       color: var(--text);
-      font-weight: 620;
+      font-weight: 640;
     }
 
     .session-row.archived {
       opacity: .56;
     }
 
-    .session-row.pinned .icon {
+    .session-row.pinned .session-title::after {
+      content: "★";
+      margin-left: 6px;
       color: var(--accent);
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .project-title,
@@ -677,9 +722,9 @@ export const codexAppStyles = `    :root {
 
     .session-workspace-badge {
       display: inline-flex;
-      width: 18px;
-      height: 18px;
-      flex: 0 0 18px;
+      width: 17px;
+      height: 17px;
+      flex: 0 0 17px;
       align-items: center;
       justify-content: center;
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
@@ -691,46 +736,72 @@ export const codexAppStyles = `    :root {
     }
 
     .project-meta {
-      display: grid;
+      display: block;
       min-width: 0;
-      gap: 2px;
     }
 
     .project-title {
+      display: block;
       font-weight: 660;
-    }
-
-    .project-path {
-      min-width: 0;
       overflow: hidden;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 11px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .session-list {
       display: grid;
-      gap: 1px;
-      padding-left: 26px;
+      gap: 2px;
+      padding-left: 34px;
     }
 
     .session-item {
-      display: flex;
+      position: relative;
+      display: block;
       min-width: 0;
-      align-items: center;
-      gap: 2px;
     }
 
     .session-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       flex: 1;
+      gap: 10px;
       min-width: 0;
-      min-height: 32px;
-      border-radius: 8px;
-      padding: 4px 10px;
+      min-height: 34px;
+      border-radius: 11px;
+      padding: 5px 10px 5px 12px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 620;
+    }
+
+    .session-main {
+      display: inline-flex;
+      min-width: 0;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .session-time {
       color: var(--muted);
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 520;
+      white-space: nowrap;
+      transition: opacity .14s ease;
+    }
+
+    .session-actions {
+      position: absolute;
+      top: 50%;
+      right: 7px;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding-left: 12px;
+      background: linear-gradient(90deg, transparent, var(--sidebar) 14px);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-50%);
+      transition: opacity .14s ease;
     }
 
     .project-delete,
@@ -745,19 +816,39 @@ export const codexAppStyles = `    :root {
       border-radius: 7px;
       color: var(--faint);
       font-size: 16px;
-      opacity: .58;
+      opacity: .82;
       padding: 0;
+    }
+
+    .session-archive-icon {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    .project-delete {
+      position: absolute;
+      top: 50%;
+      right: 4px;
+      opacity: 0;
+      transform: translateY(-50%);
     }
 
     .project-item:hover .project-delete,
     .project-delete:focus-visible,
-    .session-item:hover .session-delete,
-    .session-item:hover .session-pin,
-    .session-item:hover .session-archive,
-    .session-delete:focus-visible,
-    .session-pin:focus-visible,
-    .session-archive:focus-visible {
+    .session-item:hover .session-actions,
+    .session-item:focus-within .session-actions {
       opacity: 1;
+      pointer-events: auto;
+    }
+
+    .session-item:hover .session-time,
+    .session-item:focus-within .session-time {
+      opacity: 0;
     }
 
     .project-delete:hover:not(:disabled),
