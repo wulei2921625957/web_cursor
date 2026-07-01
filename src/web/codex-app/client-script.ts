@@ -58,6 +58,11 @@ export const codexAppClientScript = `    const els = {
       composer: document.getElementById("composer"),
       composerWrap: document.querySelector(".composer-wrap"),
       conversation: document.getElementById("conversation"),
+      conversationTurnNav: document.getElementById("conversationTurnNav"),
+      conversationTurnPreview: document.getElementById("conversationTurnPreview"),
+      conversationTurnPreviewBody: document.getElementById("conversationTurnPreviewBody"),
+      conversationTurnPreviewTitle: document.getElementById("conversationTurnPreviewTitle"),
+      conversationTurnTrack: document.getElementById("conversationTurnTrack"),
       contextMeter: document.getElementById("contextMeter"),
       contextMeterText: document.getElementById("contextMeterText"),
       contextPopoverPercent: document.getElementById("contextPopoverPercent"),
@@ -202,6 +207,7 @@ export const codexAppClientScript = `    const els = {
     let messagesAutoFollow = true
     let scheduledMessagesRender = 0
     let scrollingToBottom = false
+    let conversationTurnNavItems = []
     const openActivityGroups = new Set()
     let latestChanges = { available: false, files: [], message: "请先打开项目。" }
     let selectedChangePath = ""
@@ -1455,6 +1461,7 @@ export const codexAppClientScript = `    const els = {
         hasScrollableContent && !messagesAutoFollow
       )
       els.conversation.classList.toggle("messages-scrolled", els.messages.scrollTop > 8)
+      updateConversationTurnNavActive()
     }
 
     function updateMessagesAutoFollow() {
@@ -1958,6 +1965,207 @@ export const codexAppClientScript = `    const els = {
       updateMessagesAutoFollow()
     }
 
+    function renderConversationTurnNav(items) {
+      conversationTurnNavItems = Array.isArray(items) ? items.filter(Boolean) : []
+      if (!els.conversationTurnNav || !els.conversationTurnTrack) return
+
+      els.conversationTurnTrack.textContent = ""
+      hideConversationTurnPreview()
+      if (conversationTurnNavItems.length <= 3) {
+        els.conversationTurnNav.hidden = true
+        return
+      }
+
+      els.conversationTurnNav.hidden = false
+      for (const item of conversationTurnNavItems) {
+        const marker = document.createElement("button")
+        marker.type = "button"
+        marker.className = "conversation-turn-marker"
+        marker.dataset.turnIndex = String(item.index)
+        marker.setAttribute("aria-label", "跳到：" + item.title)
+        marker.addEventListener("click", () => {
+          scrollToConversationTurn(item.index)
+        })
+        marker.addEventListener("mouseenter", () => {
+          showConversationTurnPreview(item, marker)
+        })
+        marker.addEventListener("mouseleave", hideConversationTurnPreview)
+        marker.addEventListener("focus", () => {
+          showConversationTurnPreview(item, marker)
+        })
+        marker.addEventListener("blur", hideConversationTurnPreview)
+        els.conversationTurnTrack.appendChild(marker)
+      }
+      updateConversationTurnNavActive()
+    }
+
+    function conversationTurnNavItemFromMessage(message, index) {
+      const parsed = parseUserAttachmentMessage(message && message.text)
+      const rawText = parsed ? parsed.text : String((message && message.text) || "")
+      const lines = String(rawText || "")
+        .replace(/\\r\\n?/g, "\\n")
+        .split("\\n")
+        .map(compactText)
+        .filter(Boolean)
+      const titlePrefix = isGuideUserMessage(message) ? "引导：" : ""
+      const title = titlePrefix + shortenInline(lines[0] || "这轮对话", 42)
+      const bodyText = lines.length > 1 ? compactText(lines.slice(1).join(" ")) : ""
+      const attachmentText =
+        parsed && parsed.attachments.length > 0
+          ? "包含 " + parsed.attachments.length + " 个附件。"
+          : ""
+      return {
+        index,
+        summary: shortenInline(bodyText || attachmentText || "等待 agent 输出。", 132),
+        title,
+      }
+    }
+
+    function conversationTurnSummaryFromItems(items) {
+      const visibleMessages = Array.isArray(items)
+        ? items.filter((message) => !isActivityMessage(message))
+        : []
+      const assistantMessages = visibleMessages.filter(
+        (message) => message.kind === "assistant" && compactText(message.text)
+      )
+      const assistant = assistantMessages[assistantMessages.length - 1]
+      if (assistant) {
+        return shortenInline(markdownPreviewText(assistant.text), 132) || "这轮对话没有可预览的输出。"
+      }
+
+      const multi = visibleMessages.find((message) => message.kind === "multi")
+      if (multi && compactText(multi.text)) {
+        return shortenInline(compactText(multi.text), 132)
+      }
+
+      const activityMessages = Array.isArray(items) ? items.filter(isActivityMessage) : []
+      const activity = activityMessages[activityMessages.length - 1]
+      if (activity && compactText(activity.text)) {
+        return shortenInline(compactText(activity.text).replace(/^\\[[^\\]]+\\]\\s*/, ""), 132)
+      }
+
+      return "等待 agent 输出。"
+    }
+
+    function markdownPreviewText(text) {
+      return compactText(
+        String(text || "")
+          .replace(/\`\`\`[\\s\\S]*?\`\`\`/g, " 代码块 ")
+          .replace(/\`([^\`]+)\`/g, "$1")
+          .replace(/!\\[[^\\]]*\\]\\([^)]*\\)/g, "")
+          .replace(/\\[([^\\]]+)\\]\\([^)]*\\)/g, "$1")
+          .replace(/^#{1,6}\\s+/gm, "")
+          .replace(/^\\s*[-*+]\\s+/gm, "")
+          .replace(/^\\s*\\d+[.)]\\s+/gm, "")
+          .replace(/^\\s*>\\s?/gm, "")
+      )
+    }
+
+    function conversationTurnAnchors() {
+      return Array.from(els.messages.querySelectorAll("[data-turn-anchor]"))
+    }
+
+    function findConversationTurnAnchor(index) {
+      const target = String(index)
+      return conversationTurnAnchors().find((anchor) => anchor.dataset.turnAnchor === target) || null
+    }
+
+    function scrollToConversationTurn(index) {
+      const anchor = findConversationTurnAnchor(index)
+      if (!anchor) return
+
+      const messagesRect = els.messages.getBoundingClientRect()
+      const anchorRect = anchor.getBoundingClientRect()
+      const offset = Math.round(Math.min(160, Math.max(64, els.messages.clientHeight * 0.22)))
+      const nextTop = els.messages.scrollTop + anchorRect.top - messagesRect.top - offset
+      messagesAutoFollow = false
+      scrollingToBottom = false
+      if (typeof els.messages.scrollTo === "function") {
+        els.messages.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" })
+      } else {
+        els.messages.scrollTop = Math.max(0, nextTop)
+      }
+      updateConversationTurnNavActive()
+      updateScrollBottomButton()
+    }
+
+    function updateConversationTurnNavActive() {
+      if (!els.conversationTurnNav || els.conversationTurnNav.hidden) return
+
+      const anchors = conversationTurnAnchors()
+      const markers = Array.from(els.conversationTurnTrack.querySelectorAll(".conversation-turn-marker"))
+      if (anchors.length === 0 || markers.length === 0) return
+
+      const messagesRect = els.messages.getBoundingClientRect()
+      const targetY = messagesRect.top + Math.min(messagesRect.height * 0.38, 280)
+      let activeIndex = anchors[0].dataset.turnAnchor || "0"
+      for (const anchor of anchors) {
+        if (anchor.getBoundingClientRect().top <= targetY) {
+          activeIndex = anchor.dataset.turnAnchor || activeIndex
+        } else {
+          break
+        }
+      }
+      const maxScrollTop = Math.max(0, els.messages.scrollHeight - els.messages.clientHeight)
+      if (maxScrollTop > MESSAGES_BOTTOM_THRESHOLD * 2 && isMessagesNearBottom()) {
+        activeIndex = anchors[anchors.length - 1].dataset.turnAnchor || activeIndex
+      }
+
+      for (const marker of markers) {
+        const active = marker.dataset.turnIndex === activeIndex
+        marker.classList.toggle("active", active)
+        if (active) marker.setAttribute("aria-current", "true")
+        else marker.removeAttribute("aria-current")
+      }
+      const activeMarker = markers.find((marker) => marker.dataset.turnIndex === activeIndex)
+      if (activeMarker && typeof activeMarker.scrollIntoView === "function") {
+        activeMarker.scrollIntoView({ block: "nearest", inline: "nearest" })
+      }
+    }
+
+    function showConversationTurnPreview(item, marker) {
+      if (
+        !item ||
+        !marker ||
+        !els.conversationTurnNav ||
+        !els.conversationTurnPreview ||
+        !els.conversationTurnPreviewTitle ||
+        !els.conversationTurnPreviewBody
+      ) {
+        return
+      }
+
+      els.conversationTurnPreviewTitle.textContent = item.title
+      els.conversationTurnPreviewBody.textContent = item.summary || "点击跳转到这轮对话。"
+
+      const markerRect = marker.getBoundingClientRect()
+      const navRect = els.conversationTurnNav.getBoundingClientRect()
+      let previewY = markerRect.top + markerRect.height / 2 - navRect.top
+      els.conversationTurnPreview.style.setProperty(
+        "--conversation-turn-preview-y",
+        previewY + "px"
+      )
+      els.conversationTurnPreview.hidden = false
+
+      const previewRect = els.conversationTurnPreview.getBoundingClientRect()
+      const conversationRect = els.conversation.getBoundingClientRect()
+      const topLimit = conversationRect.top + 64
+      const bottomLimit = conversationRect.bottom - 72
+      if (previewRect.top < topLimit) {
+        previewY += topLimit - previewRect.top
+      } else if (previewRect.bottom > bottomLimit) {
+        previewY -= previewRect.bottom - bottomLimit
+      }
+      els.conversationTurnPreview.style.setProperty(
+        "--conversation-turn-preview-y",
+        previewY + "px"
+      )
+    }
+
+    function hideConversationTurnPreview() {
+      if (els.conversationTurnPreview) els.conversationTurnPreview.hidden = true
+    }
+
     function scheduleMessagesRender() {
       if (scheduledMessagesRender) return
 
@@ -1979,6 +2187,7 @@ export const codexAppClientScript = `    const els = {
       const shouldFollow = messagesAutoFollow || isMessagesNearBottom()
       const previousScrollTop = els.messages.scrollTop
       els.messages.textContent = ""
+      renderConversationTurnNav([])
 
       if (!state.activeProject) {
         renderEmptyState("打开一个项目", "当前没有打开项目。先输入项目目录，再在项目中新建会话。", true)
@@ -2007,8 +2216,14 @@ export const codexAppClientScript = `    const els = {
 
       let turnItems = []
       let turnIndex = 0
+      let userTurnIndex = 0
+      let currentTurnNavItem = null
+      const turnNavItems = []
       const flushTurn = () => {
         if (turnItems.length > 0) {
+          if (currentTurnNavItem) {
+            currentTurnNavItem.summary = conversationTurnSummaryFromItems(turnItems)
+          }
           appendTurnItems(turnItems, turnIndex)
           turnIndex += 1
         }
@@ -2018,13 +2233,17 @@ export const codexAppClientScript = `    const els = {
       for (const message of messages) {
         if (isUserMessage(message)) {
           flushTurn()
-          appendRenderedMessage(message)
+          currentTurnNavItem = conversationTurnNavItemFromMessage(message, userTurnIndex)
+          turnNavItems.push(currentTurnNavItem)
+          appendRenderedMessage(message, { turnIndex: userTurnIndex })
+          userTurnIndex += 1
           continue
         }
 
         turnItems.push(message)
       }
       flushTurn()
+      renderConversationTurnNav(turnNavItems)
       appendLatestChangeSummaryCard()
       finishMessagesRender(shouldFollow, previousScrollTop)
     }
@@ -2153,7 +2372,7 @@ export const codexAppClientScript = `    const els = {
       els.messages.appendChild(card)
     }
 
-	    function appendRenderedMessage(message) {
+	    function appendRenderedMessage(message, options) {
 	      if (message.kind === "multi") {
 	        appendMultiAgentRun(message)
 	        return
@@ -2168,6 +2387,9 @@ export const codexAppClientScript = `    const els = {
           "message user" +
           (isGuideUserMessage(message) ? " guide" : "") +
           (isQueuedUserMessage(message) ? " queued" : "")
+        if (options && Number.isFinite(options.turnIndex)) {
+          node.dataset.turnAnchor = String(options.turnIndex)
+        }
         renderUserMessageInto(node, message.text, message)
       } else {
         node.className = "message " + message.kind

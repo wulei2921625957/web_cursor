@@ -105,6 +105,14 @@ export const codexAppBody = `  <section class="auth-screen" id="authScreen" aria
 
         <div class="approval-panel" id="approvalPanel" aria-live="polite" hidden></div>
 
+        <nav class="conversation-turn-nav" id="conversationTurnNav" aria-label="会话导航" hidden>
+          <div class="conversation-turn-track" id="conversationTurnTrack"></div>
+          <div class="conversation-turn-preview" id="conversationTurnPreview" hidden>
+            <div class="conversation-turn-preview-title" id="conversationTurnPreviewTitle"></div>
+            <div class="conversation-turn-preview-body" id="conversationTurnPreviewBody"></div>
+          </div>
+        </nav>
+
         <div class="messages" id="messages"></div>
 
         <div class="composer-wrap">

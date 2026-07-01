@@ -1172,6 +1172,102 @@ export const codexAppStyles = `    :root {
       scrollbar-gutter: stable;
     }
 
+    .conversation-turn-nav {
+      position: absolute;
+      z-index: 45;
+      top: 50%;
+      left: 20px;
+      display: flex;
+      align-items: center;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .conversation-turn-track {
+      display: flex;
+      max-height: min(46vh, calc(100vh - var(--composer-reserved-height) - 120px));
+      width: 56px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 9px;
+      overflow: auto;
+      padding: 10px 0;
+      scrollbar-width: none;
+    }
+
+    .conversation-turn-track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .conversation-turn-marker {
+      display: block;
+      width: 14px;
+      min-height: 3px;
+      height: 3px;
+      border: 0;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--text) 22%, transparent);
+      opacity: .7;
+      padding: 0;
+      pointer-events: auto;
+      transition:
+        width .16s ease,
+        background .16s ease,
+        opacity .16s ease;
+    }
+
+    .conversation-turn-marker:hover {
+      width: 52px;
+      background: color-mix(in srgb, var(--text) 46%, transparent);
+      opacity: 1;
+    }
+
+    .conversation-turn-marker:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+
+    .conversation-turn-marker.active {
+      background: var(--text);
+      opacity: 1;
+    }
+
+    .conversation-turn-preview {
+      position: absolute;
+      top: var(--conversation-turn-preview-y, 50%);
+      left: 72px;
+      width: min(640px, calc(100vw - 420px));
+      border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--panel) 96%, transparent);
+      box-shadow: var(--shadow-soft);
+      color: var(--text);
+      padding: 14px 16px 16px;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .conversation-turn-preview-title {
+      overflow: hidden;
+      font-size: 15px;
+      font-weight: 760;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conversation-turn-preview-body {
+      display: -webkit-box;
+      overflow: hidden;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.5;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
     .message {
       max-width: 100%;
       line-height: 1.65;
@@ -4504,6 +4600,10 @@ export const codexAppStyles = `    :root {
 
       .messages {
         padding: 22px 18px var(--composer-reserved-height);
+      }
+
+      .conversation-turn-nav {
+        display: none;
       }
 
       .approval-panel {
