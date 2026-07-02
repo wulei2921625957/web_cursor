@@ -192,6 +192,7 @@ const COMPACTION_INSTRUCTIONS = [
 const RUN_STREAM_IDLE_TIMEOUT_MS = 120_000
 const ESTIMATED_CHARS_PER_TOKEN = 4
 const MODEL_CONTEXT_USABLE_RATIO = 0.85
+const SDK_CONTEXT_ROLLOVER_MIN_INPUT_TOKENS = 80_000
 
 export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
   enabled: true,
@@ -518,9 +519,66 @@ export class CodingAgentSession {
     const recorder = new RunHistoryRecorder(prompt)
     let commitHistory = false
     let contextLimitStatusMessage: string | undefined
+    let deltaUsage: TokenUsage | undefined
+    let finalUsage: TokenUsage | undefined
+    let pendingSdkNativeSummary = ""
     let run: Run | null = null
     let sawAgentWork = false
     let sawEvent = false
+    let sdkNativeSummaryStarted = false
+    let sdkNativeSummaryStored = false
+
+    const persistSdkNativeSummary = () => {
+      if (sdkNativeSummaryStored) {
+        return
+      }
+
+      const summary = pendingSdkNativeSummary.trim()
+      if (!summary) {
+        return
+      }
+
+      sdkNativeSummaryStored = true
+      const changed = this.memory.addNativeSdkSummary(summary)
+      if (changed) {
+        onEvent({
+          type: "task",
+          status: "SDK 摘要",
+          text: "已同步 Cursor SDK 原生摘要到会话记忆；普通聊天记忆保持不变。",
+        })
+      }
+    }
+
+    const handleSdkDelta = (update: unknown) => {
+      const updateType = sdkInteractionUpdateType(update)
+
+      if (updateType === "summary-started") {
+        if (!sdkNativeSummaryStarted) {
+          sdkNativeSummaryStarted = true
+          onEvent({
+            type: "task",
+            status: "SDK 摘要",
+            text: "Cursor SDK 正在压缩原生上下文。",
+          })
+        }
+        return
+      }
+
+      if (updateType === "summary") {
+        pendingSdkNativeSummary =
+          sdkNativeSummaryFromUpdate(update) || pendingSdkNativeSummary
+        return
+      }
+
+      if (updateType === "summary-completed") {
+        persistSdkNativeSummary()
+        return
+      }
+
+      if (updateType === "turn-ended") {
+        deltaUsage = sdkTurnUsageFromUpdate(update) ?? deltaUsage
+      }
+    }
 
     try {
       const agent = await this.getAgent()
@@ -542,6 +600,13 @@ export class CodingAgentSession {
           mode: "agent",
           ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
           model: this.modelSelection,
+          onDelta: ({ update }) => {
+            try {
+              handleSdkDelta(update)
+            } catch {
+              // Delta observability should never interrupt the primary run.
+            }
+          },
           ...(this.force ? { local: { force: true } } : {}),
         }
       )
@@ -578,6 +643,7 @@ export class CodingAgentSession {
       }
 
       const result = await run.wait()
+      persistSdkNativeSummary()
 
       if (result.status === "error" && contextLimitStatusMessage) {
         return {
@@ -587,7 +653,7 @@ export class CodingAgentSession {
         }
       }
 
-      emitRunResult(result, recorder, onEvent)
+      finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage)
       commitHistory = true
       return { ok: true }
     } catch (error) {
@@ -617,6 +683,7 @@ export class CodingAgentSession {
 
         try {
           const result = await run.wait()
+          persistSdkNativeSummary()
 
           if (result.status === "error" && contextLimitStatusMessage) {
             return {
@@ -626,7 +693,7 @@ export class CodingAgentSession {
             }
           }
 
-          emitRunResult(result, recorder, onEvent)
+          finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage)
           commitHistory = true
           return { ok: true }
         } catch (waitError) {
@@ -652,6 +719,7 @@ export class CodingAgentSession {
 
       if (commitHistory) {
         this.memory.appendEntries(recorder.entries())
+        await this.rolloverSdkAgentContextAfterRun(finalUsage ?? deltaUsage, onEvent)
       }
     }
   }
@@ -770,21 +838,90 @@ export class CodingAgentSession {
     }
 
     const estimatedChars = this.estimateContextChars(prompt)
-
     const maxHistoryChars = this.effectiveMaxHistoryChars()
+    const lastRunInputTokens = this.memory.lastRunInputTokens()
+    const localMaxTokens = estimateTokenCount(this.context.maxHistoryChars)
+    const estimatedTokens = estimateTokenCount(estimatedChars)
 
-    if (estimatedChars <= maxHistoryChars) {
+    if (estimatedChars > maxHistoryChars) {
+      await this.compactContext({
+        onEvent,
+        reason: `estimated context ${estimatedChars} chars exceeded ${maxHistoryChars}`,
+      })
       return
     }
 
-    await this.compactContext({
-      onEvent,
-      reason: `estimated context ${estimatedChars} chars exceeded ${maxHistoryChars}`,
-    })
+    if (
+      shouldRolloverSdkAgentContext({
+        estimatedContextTokens: estimatedTokens,
+        lastRunInputTokens,
+        localBudgetTokens: localMaxTokens,
+      })
+    ) {
+      await this.rolloverSdkAgentContext({
+        estimatedTokens,
+        lastRunInputTokens,
+        onEvent,
+      })
+    }
   }
 
   private estimateContextChars(extraPrompt = "") {
     return this.memory.estimateContextChars(extraPrompt)
+  }
+
+  private async rolloverSdkAgentContext({
+    estimatedTokens,
+    lastRunInputTokens,
+    onEvent,
+  }: {
+    estimatedTokens: number
+    lastRunInputTokens: number
+    onEvent: (event: AgentEvent) => void
+  }) {
+    if (!this.agent && !this.sdkAgentId) {
+      return
+    }
+
+    await this.disposeAgent()
+    this.sdkAgentId = undefined
+    onEvent({
+      type: "task",
+      status: "上下文",
+      text:
+        `检测到 SDK 原生上下文已膨胀到 ${lastRunInputTokens} input tokens，` +
+        `已切换到新 SDK agent；完整 UI 会话记忆保持不变（约 ${estimatedTokens} tokens）。`,
+    })
+  }
+
+  private async rolloverSdkAgentContextAfterRun(
+    usage: TokenUsage | undefined,
+    onEvent: (event: AgentEvent) => void
+  ) {
+    if (!this.context.enabled) {
+      return
+    }
+
+    const lastRunInputTokens = tokenUsageInputTokens(usage)
+    if (!lastRunInputTokens) {
+      return
+    }
+
+    const estimatedTokens = estimateTokenCount(this.estimateContextChars())
+    const localMaxTokens = estimateTokenCount(this.context.maxHistoryChars)
+    if (
+      shouldRolloverSdkAgentContext({
+        estimatedContextTokens: estimatedTokens,
+        lastRunInputTokens,
+        localBudgetTokens: localMaxTokens,
+      })
+    ) {
+      await this.rolloverSdkAgentContext({
+        estimatedTokens,
+        lastRunInputTokens,
+        onEvent,
+      })
+    }
   }
 
   private effectiveMaxHistoryChars() {
@@ -1031,6 +1168,96 @@ function createContextUsage(
 
 function estimateTokenCount(chars: number) {
   return Math.ceil(Math.max(0, chars) / ESTIMATED_CHARS_PER_TOKEN)
+}
+
+export function shouldRolloverSdkAgentContext({
+  estimatedContextTokens,
+  lastRunInputTokens,
+  localBudgetTokens,
+}: {
+  estimatedContextTokens: number
+  lastRunInputTokens: number
+  localBudgetTokens: number
+}) {
+  const minimumInputTokens = Math.max(
+    SDK_CONTEXT_ROLLOVER_MIN_INPUT_TOKENS,
+    localBudgetTokens * 2
+  )
+  const hiddenOverheadTokens = lastRunInputTokens - estimatedContextTokens
+
+  return (
+    lastRunInputTokens >= minimumInputTokens &&
+    hiddenOverheadTokens >= localBudgetTokens &&
+    lastRunInputTokens >= estimatedContextTokens * 1.25
+  )
+}
+
+function sdkInteractionUpdateType(update: unknown) {
+  const record = objectRecord(update)
+  return typeof record?.type === "string" ? record.type : undefined
+}
+
+function sdkNativeSummaryFromUpdate(update: unknown) {
+  const record = objectRecord(update)
+  const summary = record?.summary
+  return typeof summary === "string" ? summary.trim() : ""
+}
+
+function sdkTurnUsageFromUpdate(update: unknown) {
+  const record = objectRecord(update)
+  return normalizeTokenUsage(record?.usage)
+}
+
+function normalizeTokenUsage(value: unknown): TokenUsage | undefined {
+  const record = objectRecord(value)
+  if (!record) {
+    return undefined
+  }
+
+  const inputTokens = positiveIntegerField(record, "inputTokens")
+  const outputTokens = positiveIntegerField(record, "outputTokens")
+  const cacheReadTokens = positiveIntegerField(record, "cacheReadTokens")
+  const cacheWriteTokens = positiveIntegerField(record, "cacheWriteTokens")
+  const reasoningTokens = positiveIntegerField(record, "reasoningTokens")
+  const explicitTotalTokens = positiveIntegerField(record, "totalTokens")
+  const totalTokens =
+    explicitTotalTokens ||
+    (inputTokens || outputTokens || cacheReadTokens || cacheWriteTokens
+      ? inputTokens + outputTokens
+      : 0)
+
+  if (!inputTokens && !outputTokens && !cacheReadTokens && !cacheWriteTokens) {
+    return undefined
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens,
+    ...(reasoningTokens ? { reasoningTokens } : {}),
+  }
+}
+
+function tokenUsageInputTokens(usage: TokenUsage | undefined) {
+  const inputTokens = usage?.inputTokens
+  return typeof inputTokens === "number" && Number.isFinite(inputTokens) && inputTokens > 0
+    ? Math.floor(inputTokens)
+    : 0
+}
+
+function positiveIntegerField(record: Record<string, unknown>, field: string) {
+  const value = record[field]
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined
 }
 
 type ModelContextInfo = {
@@ -1338,9 +1565,10 @@ function assistantTextFromSdkMessage(event: SDKMessage) {
 function emitRunResult(
   result: RunResult,
   recorder: RunHistoryRecorder,
-  onEvent: (event: AgentEvent) => void
+  onEvent: (event: AgentEvent) => void,
+  fallbackUsage?: TokenUsage
 ) {
-  const usage = (result as { usage?: TokenUsage }).usage
+  const usage = (result as { usage?: TokenUsage }).usage ?? fallbackUsage
   const message = result.status === "error" ? summarizeRunResultError(result) : undefined
   const errorCode = extractStringField(result, "errorCode")
   const resultEvent: AgentEvent = {
@@ -1354,6 +1582,7 @@ function emitRunResult(
 
   recorder.record(resultEvent)
   onEvent(resultEvent)
+  return usage
 }
 
 function summarizeRunResultError(result: RunResult) {

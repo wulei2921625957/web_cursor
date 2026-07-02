@@ -159,6 +159,21 @@ export class SessionMemoryManager {
     this.appendEntries([{ role: "result", text }])
   }
 
+  addNativeSdkSummary(summary: string) {
+    const text = summary.trim()
+    if (!text || summaryTextIncludes(this.summaryText, text)) {
+      return false
+    }
+
+    this.summary = null
+    this.summaryText = appendSummaryTextPreservingLatest(
+      this.summaryText,
+      renderNativeSdkSummary(text),
+      this.options.summaryMaxChars
+    )
+    return true
+  }
+
   canCompact() {
     return this.recentEntries.length > 0 || Boolean(this.summaryText)
   }
@@ -169,6 +184,18 @@ export class SessionMemoryManager {
       contextEntriesToText(this.recentEntries).length +
       extraPrompt.length
     )
+  }
+
+  lastRunInputTokens() {
+    for (let index = this.recentEntries.length - 1; index >= 0; index -= 1) {
+      const entry = this.recentEntries[index]
+      const tokens = inputTokensFromMemoryText(entry.text)
+      if (tokens > 0) {
+        return tokens
+      }
+    }
+
+    return 0
   }
 
   buildPromptContext(): SessionMemoryPromptContext {
@@ -393,6 +420,61 @@ export function contextEntriesToText(entries: SessionMemoryEntry[]) {
 
 export function contextEntryToText(entry: SessionMemoryEntry) {
   return `## ${entry.role}\n${entry.text.trim()}`
+}
+
+export function inputTokensFromMemoryText(text: string) {
+  const match = /\binput=(\d+)\b/i.exec(text)
+  if (!match) {
+    return 0
+  }
+
+  const tokens = Number(match[1])
+  return Number.isFinite(tokens) && tokens > 0 ? Math.floor(tokens) : 0
+}
+
+function renderNativeSdkSummary(summary: string) {
+  return `Cursor SDK native summary:\n${summary.trim()}`
+}
+
+function summaryTextIncludes(summaryText: string, text: string) {
+  const normalizedSummary = normalizeSummaryForComparison(summaryText)
+  const normalizedText = normalizeSummaryForComparison(text)
+
+  return Boolean(normalizedText && normalizedSummary.includes(normalizedText))
+}
+
+function normalizeSummaryForComparison(text: string) {
+  return text.trim().replace(/\s+/g, " ")
+}
+
+function appendSummaryTextPreservingLatest(
+  existingSummary: string,
+  latestSummary: string,
+  maxChars: number
+) {
+  const existing = existingSummary.trim()
+  const latest = latestSummary.trim()
+  const combined = [existing, latest].filter(Boolean).join("\n\n")
+
+  if (combined.length <= maxChars) {
+    return combined
+  }
+
+  if (latest.length >= maxChars) {
+    return clampText(latest, maxChars)
+  }
+
+  const marker = "[earlier summary truncated]"
+  const separator = "\n\n"
+  const retainedExistingChars = Math.max(
+    0,
+    maxChars - latest.length - marker.length - separator.length * 2
+  )
+  const retainedExisting = retainedExistingChars
+    ? existing.slice(Math.max(0, existing.length - retainedExistingChars)).trimStart()
+    : ""
+
+  return [marker, retainedExisting, latest].filter(Boolean).join(separator)
 }
 
 function takeRecentEntries(entries: SessionMemoryEntry[], maxChars: number) {
