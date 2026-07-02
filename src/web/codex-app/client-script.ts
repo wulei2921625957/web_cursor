@@ -194,9 +194,16 @@ export const codexAppClientScript = `    const els = {
     const assistantBoundarySessions = new Set()
     const localSessionRunRefs = new Map()
     const persistMessagesTimers = new Map()
+    const persistMessagesInFlight = new Set()
+    const persistMessagesDirty = new Set()
     const ASSISTANT_STREAM_FRAME_MS = 32
     const ASSISTANT_STREAM_MAX_CHUNK = 96
     const ASSISTANT_STREAM_MIN_CHUNK = 18
+    const JSON_REQUEST_TIMEOUT_MS = 30_000
+    const MESSAGE_PERSIST_TIMEOUT_MS = 15_000
+    const MESSAGE_PERSIST_RETRY_MS = 5_000
+    const PROJECT_PICK_TIMEOUT_MS = 5 * 60_000
+    const STREAM_CONNECT_TIMEOUT_MS = 30_000
 	    const MAX_ATTACHMENTS = 8
 	    const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 	    const MAX_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024
@@ -716,31 +723,65 @@ export const codexAppClientScript = `    const els = {
       return queuedRunsBySession[targetSessionId]
     }
 
-    function schedulePersistMessages(sessionId) {
+    function schedulePersistMessages(sessionId, delayMs) {
       const targetSessionId = sessionId || state.activeSessionId
       if (!targetSessionId) return
+      if (persistMessagesInFlight.has(targetSessionId)) {
+        persistMessagesDirty.add(targetSessionId)
+        return
+      }
       const existingTimer = persistMessagesTimers.get(targetSessionId)
       if (existingTimer) window.clearTimeout(existingTimer)
       persistMessagesTimers.set(
         targetSessionId,
-        window.setTimeout(() => persistSessionMessages(targetSessionId), 300)
+        window.setTimeout(
+          () => persistSessionMessages(targetSessionId),
+          Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 300
+        )
       )
     }
 
     async function persistSessionMessages(sessionId) {
       if (!sessionId) return
+      if (!messagesBySession[sessionId]) return
+      if (persistMessagesInFlight.has(sessionId)) {
+        persistMessagesDirty.add(sessionId)
+        return
+      }
       persistMessagesTimers.delete(sessionId)
+      persistMessagesDirty.delete(sessionId)
+      persistMessagesInFlight.add(sessionId)
+      let saved = false
 
-      await postJson("/api/sessions/messages", {
-        sessionId,
-        messages: messagesBySession[sessionId] || [],
-      }).catch(() => {})
+      try {
+        await postJson(
+          "/api/sessions/messages",
+          {
+            sessionId,
+            messages: messagesBySession[sessionId] || [],
+          },
+          { timeoutMs: MESSAGE_PERSIST_TIMEOUT_MS }
+        )
+        saved = true
+      } catch {
+        persistMessagesDirty.add(sessionId)
+      } finally {
+        persistMessagesInFlight.delete(sessionId)
+        if (messagesBySession[sessionId] && persistMessagesDirty.has(sessionId)) {
+          persistMessagesDirty.delete(sessionId)
+          schedulePersistMessages(
+            sessionId,
+            saved ? 300 : MESSAGE_PERSIST_RETRY_MS
+          )
+        }
+      }
     }
 
     function clearPersistMessagesTimer(sessionId) {
       const timer = persistMessagesTimers.get(sessionId)
       if (timer) window.clearTimeout(timer)
       persistMessagesTimers.delete(sessionId)
+      persistMessagesDirty.delete(sessionId)
     }
 
     function isSessionRunning(sessionId) {
@@ -4404,8 +4445,7 @@ export const codexAppClientScript = `    const els = {
     }
 
     async function refreshStatus() {
-      const response = await fetch("/api/status")
-      const result = await response.json()
+      const result = await getJson("/api/status")
       applyState(result)
       startDevReload()
     }
@@ -4428,9 +4468,7 @@ export const codexAppClientScript = `    const els = {
     }
 
     async function refreshModels() {
-      const response = await fetch("/api/models")
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || "加载模型失败")
+      const result = await getJson("/api/models")
       console.log("[coding-agent] /api/models", result)
       state = Object.assign({}, state, {
         hasApiKey:
@@ -4905,8 +4943,7 @@ export const codexAppClientScript = `    const els = {
       const url = targetSessionId
         ? "/api/changes?sessionId=" + encodeURIComponent(targetSessionId)
         : "/api/changes"
-      const response = await fetch(url)
-      const changes = await response.json()
+      const changes = await getJson(url)
       if (targetSessionId && targetSessionId !== state.activeSessionId) return
       renderChanges(changes)
     }
@@ -4975,9 +5012,7 @@ export const codexAppClientScript = `    const els = {
           encodeURIComponent(state.activeSessionId) +
           "&path=" +
           encodeURIComponent(artifactPath)
-        const response = await fetch(url)
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "产物预览失败")
+        const result = await getJson(url)
         renderArtifactPreview(result)
       } catch (error) {
         renderArtifactPreview({ error: error.message || String(error) })
@@ -5889,31 +5924,50 @@ export const codexAppClientScript = `    const els = {
       return "•"
     }
 
-    async function postJson(path, body) {
-      return requestJson(path, "POST", body)
+    async function getJson(path, options) {
+      return requestJson(path, "GET", undefined, options)
     }
 
-    async function deleteJson(path, body) {
-      return requestJson(path, "DELETE", body)
+    async function postJson(path, body, options) {
+      return requestJson(path, "POST", body, options)
     }
 
-    async function requestJson(path, method, body) {
-      const response = await fetch(path, {
+    async function deleteJson(path, body, options) {
+      return requestJson(path, "DELETE", body, options)
+    }
+
+    async function requestJson(path, method, body, options) {
+      const fetchOptions = {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      })
-      const result = await response.json()
+      }
+      if (method !== "GET") {
+        fetchOptions.body = JSON.stringify(body || {})
+      }
+      const response = await fetchWithTimeout(
+        path,
+        fetchOptions,
+        options && options.timeoutMs
+      )
+      const result = await readJsonResponse(response)
       if (!response.ok) throw new Error(result.error || "请求失败")
       return result
     }
 
     async function streamPost(path, body, onEvent) {
-      const response = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      })
+      const response = await fetchWithTimeout(
+        path,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        },
+        STREAM_CONNECT_TIMEOUT_MS
+      )
+      if (!response.ok) {
+        const result = await readJsonResponse(response).catch(() => ({}))
+        throw new Error(result.error || "请求失败")
+      }
       if (!response.body) throw new Error("当前浏览器不支持流式读取。")
 
       const reader = response.body.getReader()
@@ -5933,6 +5987,47 @@ export const codexAppClientScript = `    const els = {
       if (buffer.trim()) (onEvent || handleStreamEvent)(JSON.parse(buffer))
     }
 
+    async function fetchWithTimeout(path, options, timeoutMs) {
+      const controller = new AbortController()
+      const effectiveTimeoutMs = Number.isFinite(timeoutMs)
+        ? timeoutMs
+        : JSON_REQUEST_TIMEOUT_MS
+      const timeout = effectiveTimeoutMs > 0
+        ? window.setTimeout(() => controller.abort(), effectiveTimeoutMs)
+        : 0
+
+      try {
+        return await fetch(path, Object.assign({}, options || {}, { signal: controller.signal }))
+      } catch (error) {
+        throw normalizeFetchError(error)
+      } finally {
+        if (timeout) window.clearTimeout(timeout)
+      }
+    }
+
+    async function readJsonResponse(response) {
+      try {
+        return await response.json()
+      } catch {
+        if (!response.ok) {
+          return { error: "服务端返回了无效响应。" }
+        }
+        throw new Error("服务端返回了无效响应。")
+      }
+    }
+
+    function normalizeFetchError(error) {
+      const name = error && error.name ? String(error.name) : ""
+      const message = error && error.message ? String(error.message) : ""
+      if (name === "AbortError") {
+        return new Error("请求超时，本地服务可能无响应。")
+      }
+      if (/failed to fetch|networkerror|load failed|network error/i.test(message)) {
+        return new Error("网络连接失败，本地服务可能已停止或正在重启。")
+      }
+      return error instanceof Error ? error : new Error(message || "请求失败")
+    }
+
     async function refreshTerminalList() {
       if (!state.activeSessionId) {
         activeTerminalId = ""
@@ -5945,8 +6040,18 @@ export const codexAppClientScript = `    const els = {
         return
       }
 
-      const response = await fetch("/api/terminal/list?sessionId=" + encodeURIComponent(state.activeSessionId))
-      const result = await response.json()
+      let result
+      try {
+        result = await getJson("/api/terminal/list?sessionId=" + encodeURIComponent(state.activeSessionId))
+      } catch (error) {
+        activeTerminalId = ""
+        latestTerminals = []
+        els.terminalOutput.textContent = error.message || String(error)
+        updateTerminalSearch()
+        renderTerminalRunList()
+        updateControls()
+        return
+      }
       const terminals = Array.isArray(result.terminals) ? result.terminals : []
       latestTerminals = terminals
       renderTerminalRunList()
@@ -6307,14 +6412,12 @@ export const codexAppClientScript = `    const els = {
           appendMeta("[记忆] 请输入搜索关键词。", true)
           return
         }
-        const response = await fetch(
+        const result = await getJson(
           "/api/memory/search?sessionId=" +
             encodeURIComponent(state.activeSessionId) +
             "&query=" +
             encodeURIComponent(parsed.memory)
         )
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "搜索记忆失败")
         const results = Array.isArray(result.results) ? result.results : []
         appendMeta(
           results.length
@@ -6367,14 +6470,12 @@ export const codexAppClientScript = `    const els = {
         return
       }
 
-      const response = await fetch(
+      const result = await getJson(
         "/api/memory?sessionId=" +
           encodeURIComponent(state.activeSessionId) +
           "&scope=" +
           encodeURIComponent(parsed.scope)
       )
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || "读取记忆失败")
       const memories = Array.isArray(result.memories) ? result.memories : []
       const nonEmpty = memories.filter((item) => String(item.memory || "").trim())
       appendMeta(nonEmpty.length ? formatMemoryList(nonEmpty) : emptyMemoryMessage(parsed.scope))
@@ -6446,18 +6547,19 @@ export const codexAppClientScript = `    const els = {
         terminalPollTimer = 0
       }
       const since = terminalLastLineIds[activeTerminalId] || 0
-      const response = await fetch(
-        "/api/terminal/output?terminalId=" +
-          encodeURIComponent(activeTerminalId) +
-          "&since=" +
-          encodeURIComponent(String(since))
-      )
-      if (!response.ok) {
+      let result
+      try {
+        result = await getJson(
+          "/api/terminal/output?terminalId=" +
+            encodeURIComponent(activeTerminalId) +
+            "&since=" +
+            encodeURIComponent(String(since))
+        )
+      } catch {
         activeTerminalId = ""
         updateControls()
         return
       }
-      const result = await response.json()
       const lines = Array.isArray(result.lines) ? result.lines : []
       for (const line of lines) {
         appendTerminalOutputLine(line)
@@ -6505,11 +6607,9 @@ export const codexAppClientScript = `    const els = {
       }
 
       try {
-        const response = await fetch(
+        const result = await getJson(
           "/api/extensions?sessionId=" + encodeURIComponent(state.activeSessionId)
         )
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "扩展列表加载失败")
         latestExtensions = result.extensions || null
         renderExtensions()
       } catch (error) {
@@ -6655,19 +6755,15 @@ export const codexAppClientScript = `    const els = {
       memoryError = ""
       updateControls()
       try {
-        const response = await fetch(
+        const result = await getJson(
           "/api/memory?sessionId=" +
             encodeURIComponent(state.activeSessionId) +
             "&scope=all"
         )
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "读取记忆失败")
         latestMemories = Array.isArray(result.memories) ? result.memories : []
-        const sessionResponse = await fetch(
+        const sessionResult = await getJson(
           "/api/session-memory?sessionId=" + encodeURIComponent(state.activeSessionId)
         )
-        const sessionResult = await sessionResponse.json()
-        if (!sessionResponse.ok) throw new Error(sessionResult.error || "读取会话记忆失败")
         latestSessionMemory = sessionResult.memory || null
         if (options.resetDirty) memoryDirty = false
         renderMemory()
@@ -6963,14 +7059,12 @@ export const codexAppClientScript = `    const els = {
       memoryError = ""
       updateControls()
       try {
-        const response = await fetch(
+        const result = await getJson(
           "/api/memory/search?sessionId=" +
             encodeURIComponent(state.activeSessionId) +
             "&query=" +
             encodeURIComponent(query)
         )
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "搜索记忆失败")
         latestMemoryResults = Array.isArray(result.results) ? result.results : []
         renderMemory()
         appendMeta("[记忆] 搜索完成：" + latestMemoryResults.length + " 条。")
@@ -6985,9 +7079,7 @@ export const codexAppClientScript = `    const els = {
 
     async function refreshAutomations() {
       try {
-        const response = await fetch("/api/automations")
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || "自动化列表加载失败")
+        const result = await getJson("/api/automations")
         latestAutomations = Array.isArray(result.automations) ? result.automations : []
       } catch (error) {
         latestAutomations = [{ error: error.message || String(error) }]
@@ -7286,9 +7378,13 @@ export const codexAppClientScript = `    const els = {
     async function pickProject() {
       setToast(els.projectToast, "请选择项目目录...")
       try {
-        const result = await postJson("/api/projects/pick", {
-          initialDirectory: state.launchCwd || "",
-        })
+        const result = await postJson(
+          "/api/projects/pick",
+          {
+            initialDirectory: state.launchCwd || "",
+          },
+          { timeoutMs: PROJECT_PICK_TIMEOUT_MS }
+        )
 
         if (result.cancelled) {
           setToast(els.projectToast, result.message || "已取消选择项目。")

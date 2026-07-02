@@ -208,7 +208,10 @@ type RunAttachmentInput = {
   type: string
 }
 
-type RunStreamSend = (event: unknown) => void
+type RunStreamSend = ((event: unknown) => void) & {
+  isClosed?: () => boolean
+  onClose?: (listener: () => void) => () => void
+}
 
 type QueuedSessionRun = {
   attachmentInputs: RunAttachmentInput[]
@@ -1572,10 +1575,36 @@ async function main() {
     item: QueuedSessionRun
   ) =>
     new Promise<void>((resolve, reject) => {
-      item.resolve = resolve
-      item.reject = reject
+      let unsubscribeClose = () => {}
+      item.resolve = () => {
+        unsubscribeClose()
+        resolve()
+      }
+      item.reject = (error) => {
+        unsubscribeClose()
+        reject(error)
+      }
 
       insertQueuedRun(state, item)
+      const removeQueuedOnClose = () => {
+        const index = state.queue.findIndex((queued) => queued.id === item.id)
+        if (index < 0) {
+          return
+        }
+
+        state.queue.splice(index, 1)
+        item.resolve?.()
+
+        if (!state.active && state.queue.length === 0) {
+          runningSessions.delete(item.session.id)
+        }
+      }
+      unsubscribeClose = item.send.onClose?.(removeQueuedOnClose) ?? (() => {})
+
+      if (isRunStreamClosed(item.send)) {
+        removeQueuedOnClose()
+        return
+      }
 
       const position = state.queue.findIndex((queued) => queued.id === item.id) + 1
       item.send({
@@ -1695,7 +1724,12 @@ async function main() {
   }
 
   const startNextQueuedRun = (sessionId: string, state: RunningSessionState) => {
-    const next = state.queue.shift()
+    let next = state.queue.shift()
+
+    while (next && isRunStreamClosed(next.send)) {
+      next.resolve?.()
+      next = state.queue.shift()
+    }
 
     if (!next) {
       runningSessions.delete(sessionId)
@@ -1731,11 +1765,27 @@ async function main() {
       send,
       session: activeSession,
     } = item
+    const unsubscribeClose =
+      send.onClose?.(() => {
+        if (state.multiRun) {
+          void state.multiRun.cancel().catch(() => undefined)
+          return
+        }
+
+        void activeSession.agent.cancelCurrentRun().catch(() => undefined)
+      }) ?? (() => {})
 
     try {
+      if (isRunStreamClosed(send)) {
+        return
+      }
+
       try {
         if (await rebindSessionWorkspace(activeProject, activeSession)) {
           await persistState().catch(() => {})
+        }
+        if (isRunStreamClosed(send)) {
+          return
         }
         const roots = activeSession.agent.allowedWorkspaceRoots
         if (roots.length > 1) {
@@ -1761,6 +1811,9 @@ async function main() {
       try {
         const activeCwd = setProcessWorkspaceCwd(sessionWorkspaceCwd(activeSession))
         assertWorkspaceReady(activeCwd)
+        if (isRunStreamClosed(send)) {
+          return
+        }
       } catch (error) {
         send({ type: "error", message: getErrorMessage(error) })
         return
@@ -1779,6 +1832,9 @@ async function main() {
           activeSession.id,
           attachmentInputs
         )
+        if (isRunStreamClosed(send)) {
+          return
+        }
         runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
         promptImages = buildPromptImagesFromAttachments(savedAttachments)
         if (savedAttachments.length > 0) {
@@ -1805,6 +1861,9 @@ async function main() {
       let extensionRuntime: ReturnType<typeof loadExtensionRuntime>
       try {
         extensionRuntime = loadExtensionRuntime(workspaceCwd, runPrompt)
+        if (isRunStreamClosed(send)) {
+          return
+        }
         if (extensionRuntime.sources.length > 0) {
           send({
             type: "agent",
@@ -1855,6 +1914,9 @@ async function main() {
       send({ type: "started", mode: multiAgent ? "multi" : "single", runMode: mode })
 
       try {
+        if (isRunStreamClosed(send)) {
+          return
+        }
         const agentPrompt = appendBrowserContextToPrompt(
           appendTerminalContextToPrompt(
             appendIdeContextToPrompt(
@@ -1885,7 +1947,14 @@ async function main() {
               activeSession.id
             ),
             workspaceRoots: activeSession.agent.allowedWorkspaceRoots,
-            onEvent: (event) => send({ type: "multi", state: event.state }),
+            onEvent: (event) => {
+              if (isRunStreamClosed(send)) {
+                void state.multiRun?.cancel().catch(() => undefined)
+                return
+              }
+
+              send({ type: "multi", state: event.state })
+            },
           })
           state.multiRun = runner
           const finalState = await runner.run()
@@ -1896,7 +1965,14 @@ async function main() {
             instructions: extensionRuntime.instructions,
             mcpServers: extensionRuntime.mcpServers,
             prompt: agentPrompt,
-            onEvent: (event) => send({ type: "agent", event }),
+            onEvent: (event) => {
+              if (isRunStreamClosed(send)) {
+                void activeSession.agent.cancelCurrentRun().catch(() => undefined)
+                return
+              }
+
+              send({ type: "agent", event })
+            },
           })
         }
         runHooks(
@@ -1931,6 +2007,7 @@ async function main() {
       state.activeRunId = undefined
       state.multiRun = undefined
       await persistState().catch(() => {})
+      unsubscribeClose()
 
       if (runningSessions.get(activeSession.id) === state) {
         startNextQueuedRun(activeSession.id, state)
@@ -4080,12 +4157,18 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 }
 
 function sendHtml(response: ServerResponse, html: string, status = 200) {
-  response.writeHead(status, {
-    "Cache-Control": "no-store",
-    "Content-Type": "text/html; charset=utf-8",
-    "X-Content-Type-Options": "nosniff",
-  })
-  response.end(html)
+  if (response.destroyed || response.writableEnded) {
+    return
+  }
+
+  try {
+    response.writeHead(status, {
+      "Cache-Control": "no-store",
+      "Content-Type": "text/html; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    })
+    response.end(html)
+  } catch {}
 }
 
 function sendRedirect(
@@ -4093,22 +4176,34 @@ function sendRedirect(
   location: string,
   headers: Record<string, string> = {}
 ) {
-  response.writeHead(302, {
-    "Cache-Control": "no-store",
-    Location: location,
-    "X-Content-Type-Options": "nosniff",
-    ...headers,
-  })
-  response.end()
+  if (response.destroyed || response.writableEnded) {
+    return
+  }
+
+  try {
+    response.writeHead(302, {
+      "Cache-Control": "no-store",
+      Location: location,
+      "X-Content-Type-Options": "nosniff",
+      ...headers,
+    })
+    response.end()
+  } catch {}
 }
 
 function sendJson(response: ServerResponse, payload: unknown, status = 200) {
-  response.writeHead(status, {
-    "Cache-Control": "no-store",
-    "Content-Type": "application/json; charset=utf-8",
-    "X-Content-Type-Options": "nosniff",
-  })
-  response.end(JSON.stringify(payload))
+  if (response.destroyed || response.writableEnded) {
+    return
+  }
+
+  try {
+    response.writeHead(status, {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    })
+    response.end(JSON.stringify(payload))
+  } catch {}
 }
 
 function streamDevReloadEvents(response: ServerResponse) {
@@ -4169,7 +4264,7 @@ async function sendArtifactFile(
 
 function streamEvents(
   response: ServerResponse,
-  handler: (send: (event: unknown) => void) => Promise<void>
+  handler: (send: RunStreamSend) => Promise<void>
 ) {
   response.writeHead(200, {
     "Cache-Control": "no-store",
@@ -4181,16 +4276,37 @@ function streamEvents(
   response.flushHeaders?.()
 
   let closed = false
+  const closeListeners = new Set<() => void>()
   response.once("close", () => {
     closed = true
+    for (const listener of closeListeners) {
+      listener()
+    }
+    closeListeners.clear()
   })
 
-  const send = (event: unknown) => {
+  const send = ((event: unknown) => {
     if (closed || response.destroyed || response.writableEnded) {
       return
     }
 
-    response.write(`${JSON.stringify(event)}\n`)
+    try {
+      response.write(`${JSON.stringify(event)}\n`)
+    } catch {
+      closed = true
+    }
+  }) as RunStreamSend
+  send.isClosed = () => closed || response.destroyed || response.writableEnded
+  send.onClose = (listener: () => void) => {
+    if (send.isClosed?.()) {
+      listener()
+      return () => {}
+    }
+
+    closeListeners.add(listener)
+    return () => {
+      closeListeners.delete(listener)
+    }
   }
 
   void handler(send)
@@ -4199,9 +4315,15 @@ function streamEvents(
     })
     .finally(() => {
       if (!response.destroyed && !response.writableEnded) {
-        response.end()
+        try {
+          response.end()
+        } catch {}
       }
     })
+}
+
+function isRunStreamClosed(send: RunStreamSend) {
+  return Boolean(send.isClosed?.())
 }
 
 async function inspectBrowserUrl({
