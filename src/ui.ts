@@ -85,6 +85,11 @@ import {
   normalizeCronExpression,
 } from "./automation-schedule.js"
 import {
+  errorTextWithCauses,
+  isSdkCancellationError,
+  isSdkTransportError,
+} from "./sdk-errors.js"
+import {
   deleteProjectMemory,
   deleteUserMemory,
   memoryPromptContext,
@@ -6913,42 +6918,8 @@ function truncateText(text: string, maxChars: number) {
     : `${text.slice(0, maxChars)}\n[...truncated...]`
 }
 
-function getErrorText(error: unknown): string {
-  if (error instanceof Error) {
-    const cause = (error as { cause?: unknown }).cause
-    return [error.name, error.message, cause ? getErrorText(cause) : ""]
-      .filter(Boolean)
-      .join(" ")
-  }
-
-  return String(error)
-}
-
-function isSdkTransportError(error: unknown) {
-  const text = getErrorText(error).toLowerCase()
-
-  return (
-    text.includes("nghttp2_frame_size_error") ||
-    text.includes("err_http2_stream_error") ||
-    text.includes("stream closed with error code") ||
-    text.includes("connecterror") && text.includes("network error") ||
-    isSdkCancellationErrorText(text)
-  )
-}
-
-function isSdkCancellationErrorText(text: string) {
-  return (
-    text.includes("connecterror") &&
-    text.includes("canceled") &&
-    text.includes("operation was aborted")
-  ) || (
-    text.includes("aborterror") &&
-    text.includes("operation was aborted")
-  )
-}
-
 function isSdkInteractiveMcpApprovalError(error: unknown) {
-  const text = getErrorText(error).toLowerCase()
+  const text = errorTextWithCauses(error).toLowerCase()
 
   return (
     text.includes("local sdk runs cannot request interactive approval") &&
@@ -6957,7 +6928,7 @@ function isSdkInteractiveMcpApprovalError(error: unknown) {
 }
 
 function getFriendlyRuntimeErrorMessage(error: unknown) {
-  if (isSdkCancellationErrorText(getErrorText(error).toLowerCase())) {
+  if (isSdkCancellationError(error)) {
     return "任务已取消。"
   }
 

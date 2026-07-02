@@ -34,6 +34,12 @@ import {
   type ShellApprovalHandler,
 } from "./permissions.js"
 import { sdkToolBoundaryRuntimeInstruction } from "./sdk-tool-boundary.js"
+import {
+  errorTextWithCauses,
+  isRecoverableSdkStreamCloseError,
+  isSdkCancellationError,
+  isSdkHttp2FrameError,
+} from "./sdk-errors.js"
 import { createWorkspaceCustomTools } from "./workspace-tools.js"
 
 export { createWorkspaceCustomTools } from "./workspace-tools.js"
@@ -1684,38 +1690,19 @@ function clampTextMiddle(value: string, maxChars: number) {
 }
 
 function isLikelyContextLimitError(error: unknown) {
-  return isLikelyContextLimitMessage(getErrorMessage(error))
+  return isLikelyContextLimitMessage(errorTextWithCauses(error))
 }
 
 function isRecoverableStreamCloseError(error: unknown) {
-  const text = getErrorMessage(error).toLowerCase()
-
-  return (
-    text.includes("nghttp2_frame_size_error") ||
-    (text.includes("stream closed") && text.includes("frame_size"))
-  )
+  return isRecoverableSdkStreamCloseError(error)
 }
 
 function isHttp2StreamFrameError(error: unknown) {
-  const text = getErrorMessage(error).toLowerCase()
-
-  return (
-    text.includes("nghttp2_frame_size_error") ||
-    text.includes("err_http2_stream_error")
-  )
+  return isSdkHttp2FrameError(error)
 }
 
 function isRunCancellationError(error: unknown) {
-  const text = getErrorText(error).toLowerCase()
-
-  return (
-    text.includes("connecterror") &&
-    text.includes("canceled") &&
-    text.includes("operation was aborted")
-  ) || (
-    text.includes("aborterror") &&
-    text.includes("operation was aborted")
-  )
+  return isSdkCancellationError(error)
 }
 
 function isContextLimitStatus(
@@ -1757,17 +1744,6 @@ function isLikelyContextLimitMessage(message: string) {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
-  }
-
-  return String(error)
-}
-
-function getErrorText(error: unknown): string {
-  if (error instanceof Error) {
-    const cause = (error as { cause?: unknown }).cause
-    return [error.name, error.message, cause ? getErrorText(cause) : ""]
-      .filter(Boolean)
-      .join(" ")
   }
 
   return String(error)
