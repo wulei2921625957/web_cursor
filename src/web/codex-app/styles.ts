@@ -754,6 +754,32 @@ export const codexAppStyles = `    :root {
       padding-left: 34px;
     }
 
+    .session-list-controls {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 16px;
+      min-height: 32px;
+      padding: 2px 10px 0 12px;
+    }
+
+    .session-list-toggle {
+      min-height: 28px;
+      max-width: 100%;
+      padding: 0;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 660;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-list-toggle:hover:not(:disabled) {
+      background: transparent;
+      color: var(--text);
+    }
+
     .session-item {
       position: relative;
       display: block;

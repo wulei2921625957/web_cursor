@@ -223,12 +223,15 @@ export const codexAppClientScript = `    const els = {
     let approvalBusy = false
     let activeTerminalId = ""
     let latestTerminals = []
+    const sessionListDisplayCounts = new Map()
     const terminalLastLineIds = Object.create(null)
     const USER_ATTACHMENT_MESSAGE_PREFIX = "[[coding-agent-user-message-v1]]"
     const REVIEW_PANEL_STORAGE_KEY = "coding-agent-review-panel"
     const THEME_MODE_STORAGE_KEY = "coding-agent-theme-mode"
     const PROMPT_HISTORY_STORAGE_KEY = "coding-agent-prompt-history"
     const PROMPT_HISTORY_MAX_ITEMS = 80
+    const SESSION_LIST_COLLAPSED_COUNT = 5
+    const SESSION_LIST_EXPAND_STEP = 10
     const REVIEW_PANEL_MIN_WIDTH = 360
     const REVIEW_PANEL_MAX_WIDTH = 780
     const REVIEW_PANEL_MIN_CONVERSATION_WIDTH = 520
@@ -1235,6 +1238,25 @@ export const codexAppClientScript = `    const els = {
         })
     }
 
+    function cleanupSessionListDisplayCounts(projects) {
+      const projectIds = new Set((projects || []).map((project) => project.id))
+      for (const projectId of sessionListDisplayCounts.keys()) {
+        if (!projectIds.has(projectId)) sessionListDisplayCounts.delete(projectId)
+      }
+    }
+
+    function projectSessionDisplayCount(projectId, total) {
+      if (total <= SESSION_LIST_COLLAPSED_COUNT) return total
+      const stored = Number(sessionListDisplayCounts.get(projectId))
+      const requested = Number.isFinite(stored) ? stored : SESSION_LIST_COLLAPSED_COUNT
+      return Math.min(total, Math.max(SESSION_LIST_COLLAPSED_COUNT, requested))
+    }
+
+    function setProjectSessionDisplayCount(projectId, count) {
+      if (!projectId) return
+      sessionListDisplayCounts.set(projectId, Math.max(SESSION_LIST_COLLAPSED_COUNT, count))
+    }
+
     function sessionWorkspaceOutsideProject(session, project) {
       return Boolean(
         session &&
@@ -1252,6 +1274,7 @@ export const codexAppClientScript = `    const els = {
     function renderSidebar() {
       els.projectList.textContent = ""
       const projects = state.projects || []
+      cleanupSessionListDisplayCounts(projects)
 
       if (projects.length === 0) {
         const empty = document.createElement("div")
@@ -1307,6 +1330,8 @@ export const codexAppClientScript = `    const els = {
         const sessions = document.createElement("div")
         sessions.className = "session-list"
         const visibleSessions = visibleProjectSessions(project.sessions)
+        const displayedCount = projectSessionDisplayCount(project.id, visibleSessions.length)
+        const displayedSessions = visibleSessions.slice(0, displayedCount)
         if (!project.sessions || project.sessions.length === 0) {
           const empty = document.createElement("div")
           empty.className = "empty-list"
@@ -1318,7 +1343,7 @@ export const codexAppClientScript = `    const els = {
           empty.textContent = "无匹配会话"
           sessions.appendChild(empty)
         } else {
-          for (const session of visibleSessions) {
+          for (const session of displayedSessions) {
             const sessionItem = document.createElement("div")
             sessionItem.className = "session-item"
             const sessionButton = document.createElement("button")
@@ -1405,6 +1430,38 @@ export const codexAppClientScript = `    const els = {
             sessionItem.appendChild(sessionButton)
             sessionItem.appendChild(sessionActions)
             sessions.appendChild(sessionItem)
+          }
+          if (visibleSessions.length > SESSION_LIST_COLLAPSED_COUNT) {
+            const controls = document.createElement("div")
+            controls.className = "session-list-controls"
+            if (displayedCount < visibleSessions.length) {
+              const expandButton = document.createElement("button")
+              expandButton.type = "button"
+              expandButton.className = "session-list-toggle"
+              expandButton.textContent = "展开显示"
+              expandButton.title = "再显示约 " + SESSION_LIST_EXPAND_STEP + " 个会话"
+              expandButton.addEventListener("click", () => {
+                setProjectSessionDisplayCount(
+                  project.id,
+                  Math.min(visibleSessions.length, displayedCount + SESSION_LIST_EXPAND_STEP)
+                )
+                renderSidebar()
+              })
+              controls.appendChild(expandButton)
+            }
+            if (displayedCount > SESSION_LIST_COLLAPSED_COUNT) {
+              const collapseButton = document.createElement("button")
+              collapseButton.type = "button"
+              collapseButton.className = "session-list-toggle"
+              collapseButton.textContent = "折叠显示"
+              collapseButton.title = "收起到最近会话"
+              collapseButton.addEventListener("click", () => {
+                setProjectSessionDisplayCount(project.id, SESSION_LIST_COLLAPSED_COUNT)
+                renderSidebar()
+              })
+              controls.appendChild(collapseButton)
+            }
+            sessions.appendChild(controls)
           }
         }
         group.appendChild(sessions)
