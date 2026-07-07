@@ -4,6 +4,7 @@ import type { RunResult } from "@cursor/sdk"
 import {
   buildPrompt,
   shouldRolloverSdkAgentContext,
+  shouldRetryRunWithFreshSdkAgent,
   summarizeRunResultError,
 } from "../src/agent.ts"
 import { createSandboxOptionsForPermissionMode } from "../src/permissions.ts"
@@ -90,4 +91,46 @@ test("SDK error results preserve explicit result text", () => {
   } satisfies RunResult
 
   assert.equal(summarizeRunResultError(result), "模型服务暂时不可用")
+})
+
+test("opaque SDK errors from existing agent context retry with a fresh agent", () => {
+  const error = new Error(
+    summarizeRunResultError({
+      id: "run-test",
+      requestId: "request-test",
+      status: "error",
+    })
+  )
+
+  assert.equal(
+    shouldRetryRunWithFreshSdkAgent({
+      error,
+      hadSdkAgentContext: true,
+      sawAgentWork: false,
+    }),
+    true
+  )
+})
+
+test("fresh SDK retry is skipped after agent work or context-limit errors", () => {
+  const opaqueError = new Error(
+    summarizeRunResultError({ id: "run-test", status: "error" })
+  )
+
+  assert.equal(
+    shouldRetryRunWithFreshSdkAgent({
+      error: opaqueError,
+      hadSdkAgentContext: true,
+      sawAgentWork: true,
+    }),
+    false
+  )
+  assert.equal(
+    shouldRetryRunWithFreshSdkAgent({
+      error: new Error("maximum input tokens exceeded"),
+      hadSdkAgentContext: true,
+      sawAgentWork: false,
+    }),
+    false
+  )
 })

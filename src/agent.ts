@@ -167,6 +167,13 @@ type SendPromptOptions = {
   onEvent: (event: AgentEvent) => void
 }
 
+type RunPromptFailure = {
+  canRetryAfterCompaction: boolean
+  canRetryWithFreshAgent: boolean
+  error: unknown
+  ok: false
+}
+
 export type CancelRunResult =
   | { cancelled: true }
   | { cancelled: false; reason: string }
@@ -413,6 +420,17 @@ export class CodingAgentSession {
       }
     }
 
+    if (result.canRetryWithFreshAgent) {
+      await this.resetSdkAgentForAutomaticRetry(onEvent)
+      const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
+
+      if (retry.ok) {
+        return
+      }
+
+      throw retry.error
+    }
+
     throw result.error
   }
 
@@ -521,14 +539,13 @@ export class CodingAgentSession {
     instructions = "",
     mcpServers?: Record<string, McpServerConfig>,
     images?: AgentPromptImage[]
-  ): Promise<
-    { ok: true } | { ok: false; canRetryAfterCompaction: boolean; error: unknown }
-  > {
+  ): Promise<{ ok: true } | RunPromptFailure> {
     const recorder = new RunHistoryRecorder(prompt)
     let commitHistory = false
     let contextLimitStatusMessage: string | undefined
     let deltaUsage: TokenUsage | undefined
     let finalUsage: TokenUsage | undefined
+    const hadSdkAgentContext = Boolean(this.sdkAgentId)
     let pendingSdkNativeSummary = ""
     let run: Run | null = null
     let sawAgentWork = false
@@ -657,21 +674,29 @@ export class CodingAgentSession {
         return {
           ok: false,
           canRetryAfterCompaction: !sawAgentWork,
+          canRetryWithFreshAgent: false,
           error: new Error(contextLimitStatusMessage),
         }
       }
 
       const resultError = runResultError(result)
       finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage, resultError)
-      commitHistory = true
       if (resultError) {
+        const canRetryWithFreshAgent = shouldRetryRunWithFreshSdkAgent({
+          error: new Error(resultError),
+          hadSdkAgentContext,
+          sawAgentWork,
+        })
+        commitHistory = !canRetryWithFreshAgent
         return {
           ok: false,
           canRetryAfterCompaction: !sawAgentWork && isLikelyContextLimitMessage(resultError),
+          canRetryWithFreshAgent,
           error: new Error(resultError),
         }
       }
 
+      commitHistory = true
       return { ok: true }
     } catch (error) {
       if (isRunCancellationError(error)) {
@@ -690,10 +715,16 @@ export class CodingAgentSession {
 
       if (run && sawEvent && isRecoverableStreamCloseError(error)) {
         if (isHttp2StreamFrameError(error)) {
-          commitHistory = sawEvent && !isLikelyContextLimitError(error)
+          const canRetryWithFreshAgent = shouldRetryRunWithFreshSdkAgent({
+            error,
+            hadSdkAgentContext,
+            sawAgentWork,
+          })
+          commitHistory = sawEvent && !isLikelyContextLimitError(error) && !canRetryWithFreshAgent
           return {
             ok: false,
             canRetryAfterCompaction: false,
+            canRetryWithFreshAgent,
             error,
           }
         }
@@ -706,37 +737,57 @@ export class CodingAgentSession {
             return {
               ok: false,
               canRetryAfterCompaction: !sawAgentWork,
+              canRetryWithFreshAgent: false,
               error: new Error(contextLimitStatusMessage),
             }
           }
 
           const resultError = runResultError(result)
           finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage, resultError)
-          commitHistory = true
           if (resultError) {
+            const canRetryWithFreshAgent = shouldRetryRunWithFreshSdkAgent({
+              error: new Error(resultError),
+              hadSdkAgentContext,
+              sawAgentWork,
+            })
+            commitHistory = !canRetryWithFreshAgent
             return {
               ok: false,
               canRetryAfterCompaction:
                 !sawAgentWork && isLikelyContextLimitMessage(resultError),
+              canRetryWithFreshAgent,
               error: new Error(resultError),
             }
           }
 
+          commitHistory = true
           return { ok: true }
         } catch (waitError) {
-          commitHistory = !isLikelyContextLimitError(waitError)
+          const canRetryWithFreshAgent = shouldRetryRunWithFreshSdkAgent({
+            error: waitError,
+            hadSdkAgentContext,
+            sawAgentWork,
+          })
+          commitHistory = !isLikelyContextLimitError(waitError) && !canRetryWithFreshAgent
           return {
             ok: false,
             canRetryAfterCompaction: !sawAgentWork,
+            canRetryWithFreshAgent,
             error: waitError,
           }
         }
       }
 
-      commitHistory = sawEvent && !isLikelyContextLimitError(error)
+      const canRetryWithFreshAgent = shouldRetryRunWithFreshSdkAgent({
+        error,
+        hadSdkAgentContext,
+        sawAgentWork,
+      })
+      commitHistory = sawEvent && !isLikelyContextLimitError(error) && !canRetryWithFreshAgent
       return {
         ok: false,
         canRetryAfterCompaction: !sawAgentWork,
+        canRetryWithFreshAgent,
         error,
       }
     } finally {
@@ -749,6 +800,16 @@ export class CodingAgentSession {
         await this.rolloverSdkAgentContextAfterRun(finalUsage ?? deltaUsage, onEvent)
       }
     }
+  }
+
+  private async resetSdkAgentForAutomaticRetry(onEvent: (event: AgentEvent) => void) {
+    await this.disposeAgent()
+    this.sdkAgentId = undefined
+    onEvent({
+      type: "task",
+      status: "自动恢复",
+      text: "检测到历史 SDK 会话无有效输出失败，已重建 SDK agent 并自动重试一次；UI 会话记忆保留。",
+    })
   }
 
   private async createAgent() {
@@ -1733,6 +1794,26 @@ function clampTextMiddle(value: string, maxChars: number) {
 
 function isLikelyContextLimitError(error: unknown) {
   return isLikelyContextLimitMessage(errorTextWithCauses(error))
+}
+
+export function shouldRetryRunWithFreshSdkAgent({
+  error,
+  hadSdkAgentContext,
+  sawAgentWork,
+}: {
+  error: unknown
+  hadSdkAgentContext: boolean
+  sawAgentWork: boolean
+}) {
+  if (!hadSdkAgentContext || sawAgentWork || isLikelyContextLimitError(error)) {
+    return false
+  }
+
+  return isOpaqueSdkRunError(error) || isRecoverableStreamCloseError(error)
+}
+
+function isOpaqueSdkRunError(error: unknown) {
+  return errorTextWithCauses(error).includes(SDK_RUN_ERROR_FALLBACK_MESSAGE)
 }
 
 function isRecoverableStreamCloseError(error: unknown) {
