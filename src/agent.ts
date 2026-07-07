@@ -199,6 +199,8 @@ const RUN_STREAM_IDLE_TIMEOUT_MS = 120_000
 const ESTIMATED_CHARS_PER_TOKEN = 4
 const MODEL_CONTEXT_USABLE_RATIO = 0.85
 const SDK_CONTEXT_ROLLOVER_MIN_INPUT_TOKENS = 80_000
+const SDK_RUN_ERROR_FALLBACK_MESSAGE =
+  "Cursor SDK 返回 error 状态，但没有提供具体错误详情。请查看服务端终端日志，或稍后重试。"
 
 export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
   enabled: true,
@@ -659,8 +661,17 @@ export class CodingAgentSession {
         }
       }
 
-      finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage)
+      const resultError = runResultError(result)
+      finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage, resultError)
       commitHistory = true
+      if (resultError) {
+        return {
+          ok: false,
+          canRetryAfterCompaction: !sawAgentWork && isLikelyContextLimitMessage(resultError),
+          error: new Error(resultError),
+        }
+      }
+
       return { ok: true }
     } catch (error) {
       if (isRunCancellationError(error)) {
@@ -699,8 +710,18 @@ export class CodingAgentSession {
             }
           }
 
-          finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage)
+          const resultError = runResultError(result)
+          finalUsage = emitRunResult(result, recorder, onEvent, deltaUsage, resultError)
           commitHistory = true
+          if (resultError) {
+            return {
+              ok: false,
+              canRetryAfterCompaction:
+                !sawAgentWork && isLikelyContextLimitMessage(resultError),
+              error: new Error(resultError),
+            }
+          }
+
           return { ok: true }
         } catch (waitError) {
           commitHistory = !isLikelyContextLimitError(waitError)
@@ -1572,17 +1593,17 @@ function emitRunResult(
   result: RunResult,
   recorder: RunHistoryRecorder,
   onEvent: (event: AgentEvent) => void,
-  fallbackUsage?: TokenUsage
+  fallbackUsage?: TokenUsage,
+  resultError?: string
 ) {
   const usage = (result as { usage?: TokenUsage }).usage ?? fallbackUsage
-  const message = result.status === "error" ? summarizeRunResultError(result) : undefined
   const errorCode = extractStringField(result, "errorCode")
   const resultEvent: AgentEvent = {
     type: "result",
     status: result.status,
     durationMs: result.durationMs,
     usage,
-    message,
+    message: resultError,
     errorCode,
   }
 
@@ -1591,7 +1612,11 @@ function emitRunResult(
   return usage
 }
 
-function summarizeRunResultError(result: RunResult) {
+function runResultError(result: RunResult) {
+  return result.status === "error" ? summarizeRunResultError(result) : undefined
+}
+
+export function summarizeRunResultError(result: RunResult) {
   const record = result as unknown as Record<string, unknown>
   const detail = firstCompactDetail([
     record.result,
@@ -1605,7 +1630,7 @@ function summarizeRunResultError(result: RunResult) {
   ])
 
   if (!detail || detail.toLowerCase() === result.status.toLowerCase()) {
-    return undefined
+    return SDK_RUN_ERROR_FALLBACK_MESSAGE
   }
 
   return clampInlineText(detail, 2400)

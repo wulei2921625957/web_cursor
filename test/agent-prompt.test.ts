@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { buildPrompt, shouldRolloverSdkAgentContext } from "../src/agent.ts"
+import type { RunResult } from "@cursor/sdk"
+import {
+  buildPrompt,
+  shouldRolloverSdkAgentContext,
+  summarizeRunResultError,
+} from "../src/agent.ts"
 import { createSandboxOptionsForPermissionMode } from "../src/permissions.ts"
 
 test("agent prompt treats analysis tasks as read-only", () => {
@@ -58,4 +63,21 @@ test("SDK context rollover only triggers for hidden native context bloat", () =>
     }),
     false
   )
+})
+
+test("SDK error results include a visible fallback detail", () => {
+  const message = summarizeRunResultError({ id: "run-test", status: "error" })
+
+  assert.match(message, /Cursor SDK 返回 error 状态/)
+  assert.match(message, /没有提供具体错误详情/)
+})
+
+test("SDK error results preserve explicit result text", () => {
+  const result = {
+    id: "run-test",
+    result: "模型服务暂时不可用",
+    status: "error",
+  } satisfies RunResult
+
+  assert.equal(summarizeRunResultError(result), "模型服务暂时不可用")
 })
