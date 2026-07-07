@@ -66,10 +66,20 @@ test("SDK context rollover only triggers for hidden native context bloat", () =>
 })
 
 test("SDK error results include a visible fallback detail", () => {
-  const message = summarizeRunResultError({ id: "run-test", status: "error" })
+  const message = summarizeRunResultError({
+    durationMs: 154_500,
+    id: "run-test",
+    model: { id: "composer-test" },
+    requestId: "request-test",
+    status: "error",
+  })
 
   assert.match(message, /Cursor SDK 返回 error 状态/)
   assert.match(message, /没有提供具体错误详情/)
+  assert.match(message, /runId=run-test/)
+  assert.match(message, /requestId=request-test/)
+  assert.match(message, /model=composer-test/)
+  assert.match(message, /duration=154\.5s/)
 })
 
 test("SDK error results preserve explicit result text", () => {

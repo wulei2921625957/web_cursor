@@ -200,7 +200,7 @@ const ESTIMATED_CHARS_PER_TOKEN = 4
 const MODEL_CONTEXT_USABLE_RATIO = 0.85
 const SDK_CONTEXT_ROLLOVER_MIN_INPUT_TOKENS = 80_000
 const SDK_RUN_ERROR_FALLBACK_MESSAGE =
-  "Cursor SDK 返回 error 状态，但没有提供具体错误详情。请查看服务端终端日志，或稍后重试。"
+  "Cursor SDK 返回 error 状态，但没有提供具体错误详情。请把这段错误信息发给维护者排查。"
 
 export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
   enabled: true,
@@ -1630,10 +1630,27 @@ export function summarizeRunResultError(result: RunResult) {
   ])
 
   if (!detail || detail.toLowerCase() === result.status.toLowerCase()) {
-    return SDK_RUN_ERROR_FALLBACK_MESSAGE
+    return [
+      SDK_RUN_ERROR_FALLBACK_MESSAGE,
+      runResultDiagnosticText(result),
+    ].filter(Boolean).join(" ")
   }
 
   return clampInlineText(detail, 2400)
+}
+
+function runResultDiagnosticText(result: RunResult) {
+  const parts = [
+    result.id ? `runId=${result.id}` : undefined,
+    result.requestId ? `requestId=${result.requestId}` : undefined,
+    extractStringField(result, "errorCode")
+      ? `errorCode=${extractStringField(result, "errorCode")}`
+      : undefined,
+    result.model ? `model=${formatModelLabel(result.model)}` : undefined,
+    result.durationMs ? `duration=${formatDuration(result.durationMs)}` : undefined,
+  ].filter(Boolean)
+
+  return parts.length ? `诊断信息：${parts.join(" · ")}` : ""
 }
 
 function extractStringField(value: unknown, field: string) {
