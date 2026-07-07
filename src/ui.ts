@@ -86,6 +86,7 @@ import {
 } from "./automation-schedule.js"
 import {
   errorTextWithCauses,
+  isSdkAuthenticationError,
   isSdkCancellationError,
   isSdkTransportError,
 } from "./sdk-errors.js"
@@ -6936,6 +6937,10 @@ function getFriendlyRuntimeErrorMessage(error: unknown) {
     return "当前权限模式下 Cursor SDK 不能为自定义 MCP 工具弹出交互审批。请重试；新运行会改用 SDK 内置读写工具。若任务引用的是另一个项目路径，请先切换到该项目后再提交。"
   }
 
+  if (isSdkAuthenticationError(error)) {
+    return "Cursor SDK 认证失败：当前 Cursor 登录状态或 API Key 无效。请在运行机器上重新登录 Cursor，或重新设置有效 API Key 后重试。"
+  }
+
   if (isSdkTransportError(error)) {
     return "Cursor SDK 网络连接中断，请重试。若持续出现，请检查网络、代理或稍后再试。"
   }
@@ -6957,7 +6962,7 @@ function installSdkTransportErrorGuard() {
     process.env.CURSOR_SDK_DEBUG_ERRORS === "1" ||
     process.env.CURSOR_SDK_DEBUG_ERRORS === "true"
   const handleKnownSdkError = (error: unknown) => {
-    if (isSdkTransportError(error)) {
+    if (isSdkAuthenticationError(error) || isSdkTransportError(error)) {
       if (shouldLog) {
         console.warn(
           `[cursor-sdk] ${getFriendlyRuntimeErrorMessage(error)}`

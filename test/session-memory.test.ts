@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   SessionMemoryManager,
+  contextEntriesToText,
   inputTokensFromMemoryText,
 } from "../src/session-memory.ts"
 
@@ -42,4 +43,21 @@ test("native SDK summaries merge into summary without expanding recent history",
   assert.match(snapshot.summaryText, /Important retained fact\./)
   assert.equal(snapshot.recentEntries.length, 0)
   assert.equal(snapshot.transcriptEntries.length, 0)
+})
+
+test("session memory transcript diagnostics are bounded", () => {
+  const memory = new SessionMemoryManager({
+    retainRecentChars: 24_000,
+    summaryMaxChars: 16_000,
+  })
+
+  for (let index = 0; index < 500; index += 1) {
+    memory.appendEntries([
+      { role: "assistant", text: `entry ${index} ${"x".repeat(1000)}` },
+    ])
+  }
+
+  const snapshot = memory.snapshot()
+  assert.ok(snapshot.transcriptEntries.length < 500)
+  assert.ok(contextEntriesToText(snapshot.transcriptEntries).length <= 130_000)
 })

@@ -14,6 +14,11 @@ type SessionChangeSnapshot = {
   changeResultTree?: string
 }
 
+const GIT_COMMAND_TIMEOUT_MS = readPositiveIntegerEnv(
+  "CODING_AGENT_GIT_TIMEOUT_MS",
+  20_000
+)
+
 export type ChangedFile = {
   additions?: number
   deletions?: number
@@ -561,6 +566,7 @@ function readGitWithEnv(cwd: string, args: string[], env: NodeJS.ProcessEnv) {
     encoding: "utf8",
     env,
     stdio: ["ignore", "pipe", "ignore"],
+    timeout: GIT_COMMAND_TIMEOUT_MS,
   })
 }
 
@@ -582,6 +588,16 @@ function runCommandForUser(cwd: string, command: string, args: string[]) {
     const detail = [stderr, stdout].filter(Boolean).join("\n")
     throw new Error(detail || (error instanceof Error ? error.message : String(error)))
   }
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const value = process.env[name]
+  if (!value) {
+    return fallback
+  }
+
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
 function extractFirstUrl(output: string) {

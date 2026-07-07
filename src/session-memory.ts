@@ -87,6 +87,9 @@ export type SessionMemoryCompactionOutput = {
 
 const MAX_COMPACTION_RECORDS = 50
 const MAX_PROMPT_SNAPSHOTS = 20
+const MAX_TRANSCRIPT_CHARS = 120_000
+const MAX_TRANSCRIPT_ENTRIES = 400
+const MAX_TRANSCRIPT_ENTRY_CHARS = 8_000
 
 export const SESSION_MEMORY_JSON_SCHEMA = [
   "{",
@@ -127,7 +130,7 @@ export class SessionMemoryManager {
     this.recentEntries = snapshot.recentEntries
     this.summary = snapshot.summary
     this.summaryText = clampText(snapshot.summaryText, this.options.summaryMaxChars)
-    this.transcriptEntries = snapshot.transcriptEntries
+    this.transcriptEntries = limitTranscriptEntries(snapshot.transcriptEntries)
   }
 
   reset() {
@@ -143,6 +146,7 @@ export class SessionMemoryManager {
     const normalized = normalizeMemoryEntries(entries)
     this.recentEntries.push(...normalized)
     this.transcriptEntries.push(...normalized)
+    this.transcriptEntries = limitTranscriptEntries(this.transcriptEntries)
   }
 
   addExternalSummary(summary: string) {
@@ -289,7 +293,7 @@ export class SessionMemoryManager {
       recentEntries: this.recentEntries.map((entry) => ({ ...entry })),
       summary: this.summary ? cloneStructuredSummary(this.summary) : null,
       summaryText: this.summaryText,
-      transcriptEntries: this.transcriptEntries.map((entry) => ({ ...entry })),
+      transcriptEntries: limitTranscriptEntries(this.transcriptEntries),
     }
   }
 }
@@ -311,12 +315,13 @@ export function normalizeSessionMemorySnapshot(
     recentEntries: recentEntries.length ? recentEntries : legacy.history,
     summary,
     summaryText: summaryText || (summary ? renderSessionMemorySummary(summary) : ""),
-    transcriptEntries:
+    transcriptEntries: limitTranscriptEntries(
       transcriptEntries.length || recentEntries.length
         ? transcriptEntries.length
           ? transcriptEntries
           : recentEntries
-        : legacy.history,
+        : legacy.history
+    ),
   }
 }
 
@@ -496,6 +501,15 @@ function takeRecentEntries(entries: SessionMemoryEntry[], maxChars: number) {
   return retained
 }
 
+function limitTranscriptEntries(entries: SessionMemoryEntry[]) {
+  return takeRecentEntries(entries, MAX_TRANSCRIPT_CHARS)
+    .slice(-MAX_TRANSCRIPT_ENTRIES)
+    .map((entry) => ({
+      role: entry.role,
+      text: clampDiagnosticText(entry.text, MAX_TRANSCRIPT_ENTRY_CHARS),
+    }))
+}
+
 function normalizeStructuredSummary(value: unknown): StructuredSessionMemory | null {
   if (!value || typeof value !== "object") {
     return null
@@ -660,6 +674,16 @@ function clampText(value: string, maxChars: number) {
   }
 
   return `${text.slice(0, Math.max(0, maxChars - 38)).trimEnd()}\n[truncated during compaction]`
+}
+
+function clampDiagnosticText(value: string, maxChars: number) {
+  const text = value.trim()
+
+  if (text.length <= maxChars) {
+    return text
+  }
+
+  return `${text.slice(0, Math.max(0, maxChars - 36)).trimEnd()}\n[truncated in session diagnostics]`
 }
 
 function clampTextMiddle(value: string, maxChars: number) {

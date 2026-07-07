@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   errorTextWithCauses,
+  isSdkAuthenticationError,
   isRecoverableSdkStreamCloseError,
   isSdkCancellationError,
   isSdkTransportError,
@@ -31,4 +32,26 @@ test("SDK cancellation remains distinguishable from network resets", () => {
 
   assert.equal(isSdkCancellationError(error), true)
   assert.equal(isSdkTransportError(error), true)
+})
+
+test("SDK authentication details are extracted from ConnectRPC metadata", () => {
+  const error = Object.assign(new Error("[unauthenticated] Error"), {
+    name: "ConnectError",
+    code: 16,
+    details: [
+      {
+        debug: {
+          error: "ERROR_NOT_LOGGED_IN",
+          details: {
+            title: "Authentication error",
+            detail: "If you are logged in, try logging out and back in.",
+          },
+        },
+      },
+    ],
+  })
+
+  assert.match(errorTextWithCauses(error), /ERROR_NOT_LOGGED_IN/)
+  assert.match(errorTextWithCauses(error), /Authentication error/)
+  assert.equal(isSdkAuthenticationError(error), true)
 })

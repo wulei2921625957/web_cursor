@@ -26,6 +26,16 @@ export function isSdkCancellationError(error: unknown) {
   return isSdkCancellationErrorText(normalizedErrorText(error))
 }
 
+export function isSdkAuthenticationError(error: unknown) {
+  const text = normalizedErrorText(error)
+
+  return (
+    text.includes("unauthenticated") ||
+    text.includes("error_not_logged_in") ||
+    text.includes("authentication error")
+  )
+}
+
 export function isSdkCancellationErrorText(text: string) {
   return (
     text.includes("connecterror") &&
@@ -85,7 +95,17 @@ function collectErrorTextParts(error: unknown, seen: Set<object>): string[] {
   const record = error as Record<string, unknown>
   const parts: string[] = []
 
-  for (const key of ["name", "message", "rawMessage", "code", "errno", "syscall"]) {
+  for (const key of [
+    "name",
+    "message",
+    "rawMessage",
+    "code",
+    "errno",
+    "syscall",
+    "error",
+    "title",
+    "detail",
+  ]) {
     const value = record[key]
     if (typeof value === "string" || typeof value === "number") {
       parts.push(String(value))
@@ -93,11 +113,20 @@ function collectErrorTextParts(error: unknown, seen: Set<object>): string[] {
   }
 
   parts.push(...collectErrorTextParts(record.cause, seen))
+  parts.push(...collectErrorTextParts(record.debug, seen))
 
   if (Array.isArray(record.errors)) {
     for (const item of record.errors) {
       parts.push(...collectErrorTextParts(item, seen))
     }
+  }
+
+  if (Array.isArray(record.details)) {
+    for (const item of record.details) {
+      parts.push(...collectErrorTextParts(item, seen))
+    }
+  } else {
+    parts.push(...collectErrorTextParts(record.details, seen))
   }
 
   return parts
