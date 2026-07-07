@@ -5973,6 +5973,8 @@ export const codexAppClientScript = `    const els = {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
+      let eventCount = 0
+      let lineNumber = 0
       while (true) {
         const read = await reader.read()
         if (read.done) break
@@ -5980,11 +5982,50 @@ export const codexAppClientScript = `    const els = {
         const lines = buffer.split("\\n")
         buffer = lines.pop() || ""
         for (const line of lines) {
+          lineNumber += 1
           if (!line.trim()) continue
-          ;(onEvent || handleStreamEvent)(JSON.parse(line))
+          ;(onEvent || handleStreamEvent)(
+            parseStreamEventLine(line, {
+              eventCount,
+              final: false,
+              lineNumber,
+            })
+          )
+          eventCount += 1
         }
       }
-      if (buffer.trim()) (onEvent || handleStreamEvent)(JSON.parse(buffer))
+      buffer += decoder.decode()
+      if (buffer.trim()) {
+        lineNumber += 1
+        ;(onEvent || handleStreamEvent)(
+          parseStreamEventLine(buffer, {
+            eventCount,
+            final: true,
+            lineNumber,
+          })
+        )
+      }
+    }
+
+    function parseStreamEventLine(line, context) {
+      try {
+        return JSON.parse(line)
+      } catch (error) {
+        const phase = context && context.final ? "final" : "stream"
+        const parts = [
+          "phase=" + phase,
+          "line=" + (context && context.lineNumber ? context.lineNumber : "?"),
+          "parsedEvents=" + (context && Number.isFinite(context.eventCount) ? context.eventCount : 0),
+          "chars=" + String(line || "").length,
+        ]
+        const reason = error && error.message ? String(error.message) : String(error || "unknown")
+        throw new Error(
+          "流式响应解析失败，服务端连接可能在一条 JSON 事件中间中断，或返回了非 NDJSON 数据。诊断信息：" +
+            parts.join(" · ") +
+            " · parser=" +
+            reason
+        )
+      }
     }
 
     async function fetchWithTimeout(path, options, timeoutMs) {
