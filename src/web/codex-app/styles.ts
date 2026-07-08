@@ -1301,6 +1301,10 @@ export const codexAppStyles = `    :root {
       white-space: pre-wrap;
     }
 
+    .message.has-copy-action {
+      position: relative;
+    }
+
     .message.user {
       position: relative;
       display: grid;
@@ -1315,6 +1319,21 @@ export const codexAppStyles = `    :root {
       font-size: 15px;
       font-weight: 560;
       white-space: normal;
+    }
+
+    .message.user.has-copy-action {
+      margin-bottom: 18px;
+    }
+
+    .message.user.has-copy-action::after {
+      position: absolute;
+      z-index: 1;
+      right: 0;
+      bottom: -36px;
+      left: 0;
+      height: 38px;
+      background: transparent;
+      content: "";
     }
 
     .message.user.queued {
@@ -1435,6 +1454,17 @@ export const codexAppStyles = `    :root {
       white-space: pre-wrap;
     }
 
+    .user-message-text.has-copyable-block {
+      display: grid;
+      min-width: min(480px, 100%);
+      gap: 10px;
+      white-space: normal;
+    }
+
+    .user-message-text-fragment {
+      white-space: pre-wrap;
+    }
+
     .user-attachments {
       display: flex;
       flex-wrap: wrap;
@@ -1457,11 +1487,96 @@ export const codexAppStyles = `    :root {
     }
 
     .message.assistant {
+      position: relative;
       align-self: center;
       width: min(880px, 100%);
       color: var(--text);
       font-size: 15px;
       line-height: 1.66;
+    }
+
+    .message.assistant.has-copy-action {
+      padding-right: 46px;
+    }
+
+    .copy-action {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 720;
+      line-height: 1;
+      padding: 0 9px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition:
+        background .14s ease,
+        color .14s ease,
+        opacity .14s ease;
+    }
+
+    .copy-action::before {
+      content: "⧉";
+      color: currentColor;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .copy-action:hover,
+    .copy-action:focus-visible,
+    .copy-action.copied {
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--text);
+    }
+
+    .copy-action.error {
+      background: color-mix(in srgb, var(--danger) 10%, transparent);
+      color: var(--danger);
+    }
+
+    .message-copy-action {
+      position: absolute;
+      top: -2px;
+      right: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .message.user .message-copy-action {
+      top: auto;
+      right: 8px;
+      bottom: -31px;
+      width: 34px;
+      min-height: 28px;
+      padding: 0;
+      font-size: 0;
+      z-index: 2;
+    }
+
+    .message.user .message-copy-action::before {
+      font-size: 18px;
+    }
+
+    .message:hover .message-copy-action,
+    .message:focus-within .message-copy-action,
+    .message-copy-action.copied,
+    .message-copy-action.error {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .message.user .message-copy-action.copied,
+    .message.user .message-copy-action.error {
+      width: auto;
+      padding: 0 9px;
+      font-size: 12px;
     }
 
     .message.meta,
@@ -1511,6 +1626,7 @@ export const codexAppStyles = `    :root {
     .markdown ol,
     .markdown blockquote,
     .markdown pre,
+    .markdown .copyable-block,
     .markdown table {
       margin: 0 0 14px;
     }
@@ -1520,6 +1636,10 @@ export const codexAppStyles = `    :root {
     }
 
     .markdown > :last-child {
+      margin-bottom: 0;
+    }
+
+    .message.assistant.markdown.has-copy-action > :nth-last-child(2) {
       margin-bottom: 0;
     }
 
@@ -1562,6 +1682,64 @@ export const codexAppStyles = `    :root {
       background: transparent;
       padding: 0;
       white-space: pre;
+    }
+
+    .copyable-block {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+
+    .copyable-block-header {
+      display: flex;
+      min-height: 36px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+      padding: 4px 6px 4px 12px;
+    }
+
+    .copyable-block-label {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 760;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .copyable-block-body {
+      overflow: auto;
+    }
+
+    .copyable-block pre,
+    .copyable-block table {
+      margin: 0;
+    }
+
+    .copyable-block pre {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 12px 14px 14px;
+    }
+
+    .copyable-block table {
+      width: 100%;
+      min-width: max-content;
+    }
+
+    .message.user .copyable-block {
+      background: color-mix(in srgb, var(--panel) 86%, var(--panel-soft));
+    }
+
+    .message.user .copyable-block-header {
+      background: color-mix(in srgb, var(--panel) 92%, var(--panel-soft));
     }
 
     .markdown a {
@@ -4601,6 +4779,13 @@ export const codexAppStyles = `    :root {
     .small-muted {
       color: var(--muted);
       font-size: 12px;
+    }
+
+    @media (hover: none) {
+      .message.assistant .message-copy-action {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
 
     @media (max-width: 1280px) {

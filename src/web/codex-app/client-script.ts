@@ -199,6 +199,7 @@ export const codexAppClientScript = `    const els = {
     const ASSISTANT_STREAM_FRAME_MS = 32
     const ASSISTANT_STREAM_MAX_CHUNK = 96
     const ASSISTANT_STREAM_MIN_CHUNK = 18
+    const COPY_BUTTON_RESET_MS = 1400
     const JSON_REQUEST_TIMEOUT_MS = 30_000
     const MESSAGE_PERSIST_TIMEOUT_MS = 15_000
     const MESSAGE_PERSIST_RETRY_MS = 5_000
@@ -216,6 +217,7 @@ export const codexAppClientScript = `    const els = {
     let scrollingToBottom = false
     let conversationTurnNavItems = []
     const openActivityGroups = new Set()
+    const copyButtonResetTimers = new WeakMap()
     let latestChanges = { available: false, files: [], message: "请先打开项目。" }
     let selectedChangePath = ""
     let modelChoices = []
@@ -2480,6 +2482,7 @@ export const codexAppClientScript = `    const els = {
 	      if (message.kind === "assistant") {
 	        node.className = "message assistant markdown"
         renderMarkdownInto(node, message.text)
+        appendMessageCopyAction(node, message.text)
       } else if (isUserMessage(message)) {
         node.className =
           "message user" +
@@ -2489,6 +2492,7 @@ export const codexAppClientScript = `    const els = {
           node.dataset.turnAnchor = String(options.turnIndex)
         }
         renderUserMessageInto(node, message.text, message)
+        appendMessageCopyAction(node, userMessageCopyText(message.text))
       } else {
         node.className = "message " + message.kind
         node.textContent = message.text
@@ -2509,7 +2513,7 @@ export const codexAppClientScript = `    const els = {
       if (!parsed) {
         const body = document.createElement("div")
         body.className = "user-message-text"
-        body.textContent = text
+        renderUserMessageTextInto(body, text)
         node.appendChild(body)
         if (isQueuedUserMessage(message)) {
           appendQueuedMessageActions(node, message)
@@ -2519,7 +2523,7 @@ export const codexAppClientScript = `    const els = {
 
       const body = document.createElement("div")
       body.className = "user-message-text"
-      body.textContent = parsed.text
+      renderUserMessageTextInto(body, parsed.text)
       node.appendChild(body)
 
       const list = document.createElement("div")
@@ -2532,6 +2536,62 @@ export const codexAppClientScript = `    const els = {
       if (isQueuedUserMessage(message)) {
         appendQueuedMessageActions(node, message)
       }
+    }
+
+    function renderUserMessageTextInto(container, text) {
+      const value = String(text || "")
+      const lines = value.replace(/\\r\\n?/g, "\\n").split("\\n")
+      if (!lines.some((line) => Boolean(getFenceInfo(line)))) {
+        container.textContent = value
+        return
+      }
+
+      container.classList.add("has-copyable-block")
+      container.textContent = ""
+      let index = 0
+      let plainLines = []
+      const flushPlainLines = () => {
+        if (plainLines.length === 0) return
+        const chunk = document.createElement("div")
+        chunk.className = "user-message-text-fragment"
+        chunk.textContent = plainLines.join("\\n")
+        container.appendChild(chunk)
+        plainLines = []
+      }
+
+      while (index < lines.length) {
+        const fence = getFenceInfo(lines[index])
+        if (!fence) {
+          plainLines.push(lines[index])
+          index += 1
+          continue
+        }
+
+        flushPlainLines()
+        const content = []
+        index += 1
+        while (index < lines.length && !isFenceClose(lines[index], fence.marker)) {
+          content.push(lines[index])
+          index += 1
+        }
+        if (index < lines.length) index += 1
+
+        const source = content.join("\\n")
+        const pre = document.createElement("pre")
+        const code = document.createElement("code")
+        code.textContent = source
+        pre.appendChild(code)
+        container.appendChild(
+          createCopyableBlock(fence.label || "代码", source, pre, "code-block user-code-block")
+        )
+      }
+
+      flushPlainLines()
+    }
+
+    function userMessageCopyText(text) {
+      const parsed = parseUserAttachmentMessage(text)
+      return parsed ? parsed.text : String(text || "")
     }
 
     function appendQueuedMessageActions(node, message) {
@@ -3199,20 +3259,23 @@ export const codexAppClientScript = `    const els = {
           continue
         }
 
-        const fence = getFenceMarker(line)
+        const fence = getFenceInfo(line)
         if (fence) {
           const pre = document.createElement("pre")
           const code = document.createElement("code")
           const content = []
           index += 1
-          while (index < lines.length && !lines[index].trimStart().startsWith(fence)) {
+          while (index < lines.length && !isFenceClose(lines[index], fence.marker)) {
             content.push(lines[index])
             index += 1
           }
           if (index < lines.length) index += 1
-          code.textContent = content.join("\\n")
+          const source = content.join("\\n")
+          code.textContent = source
           pre.appendChild(code)
-          container.appendChild(pre)
+          container.appendChild(
+            createCopyableBlock(fence.label || "代码", source, pre, "code-block")
+          )
           continue
         }
 
@@ -3289,11 +3352,22 @@ export const codexAppClientScript = `    const els = {
     }
 
     function getFenceMarker(line) {
+      const fence = getFenceInfo(line)
+      return fence ? fence.marker : ""
+    }
+
+    function getFenceInfo(line) {
       const trimmed = String(line || "").trimStart()
       const tickFence = String.fromCharCode(96).repeat(3)
-      if (trimmed.startsWith(tickFence)) return tickFence
-      if (trimmed.startsWith("~~~")) return "~~~"
-      return ""
+      const marker = trimmed.startsWith(tickFence) ? tickFence : trimmed.startsWith("~~~") ? "~~~" : ""
+      if (!marker) return null
+      const rawLabel = trimmed.slice(marker.length).trim()
+      const label = rawLabel ? rawLabel.replace(/[{}]/g, "").split(/\\s+/)[0] : ""
+      return { marker, label }
+    }
+
+    function isFenceClose(line, marker) {
+      return String(line || "").trimStart().startsWith(marker)
     }
 
     function isMarkdownBlockStart(lines, index) {
@@ -3332,6 +3406,7 @@ export const codexAppClientScript = `    const els = {
 
     function appendMarkdownTable(container, lines, index) {
       const table = document.createElement("table")
+      const sourceLines = [lines[index], lines[index + 1]]
       const thead = document.createElement("thead")
       const headerRow = document.createElement("tr")
       for (const cell of parseTableCells(lines[index])) {
@@ -3345,6 +3420,7 @@ export const codexAppClientScript = `    const els = {
       const tbody = document.createElement("tbody")
       index += 2
       while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+        sourceLines.push(lines[index])
         const row = document.createElement("tr")
         for (const cell of parseTableCells(lines[index])) {
           const td = document.createElement("td")
@@ -3355,8 +3431,110 @@ export const codexAppClientScript = `    const els = {
         index += 1
       }
       table.appendChild(tbody)
-      container.appendChild(table)
+      container.appendChild(createCopyableBlock("表格", sourceLines.join("\\n"), table, "table-block"))
       return index
+    }
+
+    function createCopyableBlock(label, copyText, contentNode, className) {
+      const wrapper = document.createElement("div")
+      wrapper.className = "copyable-block" + (className ? " " + className : "")
+
+      const header = document.createElement("div")
+      header.className = "copyable-block-header"
+      const title = document.createElement("span")
+      title.className = "copyable-block-label"
+      title.textContent = label || "内容"
+      header.appendChild(title)
+      header.appendChild(createCopyButton(() => copyText, "复制"))
+
+      const body = document.createElement("div")
+      body.className = "copyable-block-body"
+      body.appendChild(contentNode)
+
+      wrapper.appendChild(header)
+      wrapper.appendChild(body)
+      return wrapper
+    }
+
+    function appendMessageCopyAction(node, text) {
+      const value = String(text || "").trim()
+      if (!value) return
+      node.classList.add("has-copy-action")
+      const button = createCopyButton(() => text, "复制")
+      button.classList.add("message-copy-action")
+      button.setAttribute("aria-label", "复制整条消息")
+      node.appendChild(button)
+    }
+
+    function createCopyButton(textProvider, label) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "copy-action"
+      button.textContent = label || "复制"
+      button.dataset.defaultLabel = label || "复制"
+      button.addEventListener("click", (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const text = typeof textProvider === "function" ? textProvider() : textProvider
+        void copyTextWithButtonFeedback(button, text)
+      })
+      return button
+    }
+
+    async function copyTextWithButtonFeedback(button, text) {
+      const value = String(text || "")
+      if (!value) return
+      try {
+        await writeClipboardText(value)
+        setCopyButtonFeedback(button, "已复制", false)
+      } catch {
+        setCopyButtonFeedback(button, "复制失败", true)
+      }
+    }
+
+    async function writeClipboardText(text) {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        try {
+          await navigator.clipboard.writeText(text)
+          return
+        } catch {}
+      }
+      copyTextWithSelectionFallback(text)
+    }
+
+    function copyTextWithSelectionFallback(text) {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.setAttribute("readonly", "")
+      textarea.style.position = "fixed"
+      textarea.style.top = "-1000px"
+      textarea.style.left = "-1000px"
+      textarea.style.width = "1px"
+      textarea.style.height = "1px"
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      let copied = false
+      try {
+        copied = document.execCommand("copy")
+      } finally {
+        textarea.remove()
+      }
+      if (!copied) throw new Error("copy failed")
+    }
+
+    function setCopyButtonFeedback(button, label, isError) {
+      const previousTimer = copyButtonResetTimers.get(button)
+      if (previousTimer) window.clearTimeout(previousTimer)
+      button.textContent = label
+      button.classList.toggle("copied", !isError)
+      button.classList.toggle("error", Boolean(isError))
+      const timer = window.setTimeout(() => {
+        button.textContent = button.dataset.defaultLabel || "复制"
+        button.classList.remove("copied", "error")
+        copyButtonResetTimers.delete(button)
+      }, COPY_BUTTON_RESET_MS)
+      copyButtonResetTimers.set(button, timer)
     }
 
     function appendReadableParagraphs(container, lines) {
