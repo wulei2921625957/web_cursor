@@ -236,6 +236,7 @@ type QueuedSessionRun = {
 type RunningSessionState = {
   active: boolean
   activeRunId?: string
+  cancelController?: AbortController
   multiRun?: MultiAgentRunner
   projectId: string
   queue: QueuedSessionRun[]
@@ -1573,6 +1574,7 @@ async function main() {
     state.workspaceProjectIds = item.workspaceProjectIds
     state.active = true
     state.activeRunId = item.id
+    state.cancelController = new AbortController()
     await executeSessionRun(item, state)
   }
 
@@ -1744,6 +1746,7 @@ async function main() {
 
     state.active = true
     state.activeRunId = next.id
+    state.cancelController = new AbortController()
     state.projectId = next.project.id
     state.workspaceProjectIds = next.workspaceProjectIds
     next.send({
@@ -1771,8 +1774,29 @@ async function main() {
       send,
       session: activeSession,
     } = item
+    const cancelController = state.cancelController ?? new AbortController()
+    state.cancelController = cancelController
+    const finishPendingCancellation = () => {
+      if (!cancelController.signal.aborted) {
+        return false
+      }
+
+      if (!isRunStreamClosed(send)) {
+        send({
+          type: "agent",
+          event: {
+            type: "result",
+            status: "cancelled",
+            message: "Run cancelled.",
+          },
+        })
+        send({ type: "finished" })
+      }
+      return true
+    }
     const unsubscribeClose =
       send.onClose?.(() => {
+        cancelController.abort()
         if (state.multiRun) {
           void state.multiRun.cancel().catch(() => undefined)
           return
@@ -1782,7 +1806,7 @@ async function main() {
       }) ?? (() => {})
 
     try {
-      if (isRunStreamClosed(send)) {
+      if (isRunStreamClosed(send) || finishPendingCancellation()) {
         return
       }
 
@@ -1790,7 +1814,7 @@ async function main() {
         if (await rebindSessionWorkspace(activeProject, activeSession)) {
           await persistState().catch(() => {})
         }
-        if (isRunStreamClosed(send)) {
+        if (isRunStreamClosed(send) || finishPendingCancellation()) {
           return
         }
         const roots = activeSession.agent.allowedWorkspaceRoots
@@ -1817,7 +1841,7 @@ async function main() {
       try {
         const activeCwd = setProcessWorkspaceCwd(sessionWorkspaceCwd(activeSession))
         assertWorkspaceReady(activeCwd)
-        if (isRunStreamClosed(send)) {
+        if (isRunStreamClosed(send) || finishPendingCancellation()) {
           return
         }
       } catch (error) {
@@ -1838,7 +1862,7 @@ async function main() {
           activeSession.id,
           attachmentInputs
         )
-        if (isRunStreamClosed(send)) {
+        if (isRunStreamClosed(send) || finishPendingCancellation()) {
           return
         }
         runPrompt = buildPromptWithAttachments(prompt, savedAttachments)
@@ -1867,7 +1891,7 @@ async function main() {
       let extensionRuntime: ReturnType<typeof loadExtensionRuntime>
       try {
         extensionRuntime = loadExtensionRuntime(workspaceCwd, runPrompt)
-        if (isRunStreamClosed(send)) {
+        if (isRunStreamClosed(send) || finishPendingCancellation()) {
           return
         }
         if (extensionRuntime.sources.length > 0) {
@@ -1920,7 +1944,7 @@ async function main() {
       send({ type: "started", mode: multiAgent ? "multi" : "single", runMode: mode })
 
       try {
-        if (isRunStreamClosed(send)) {
+        if (isRunStreamClosed(send) || finishPendingCancellation()) {
           return
         }
         const agentPrompt = appendBrowserContextToPrompt(
@@ -1971,6 +1995,7 @@ async function main() {
             instructions: extensionRuntime.instructions,
             mcpServers: extensionRuntime.mcpServers,
             prompt: agentPrompt,
+            signal: cancelController.signal,
             onEvent: (event) => {
               if (isRunStreamClosed(send)) {
                 void activeSession.agent.cancelCurrentRun().catch(() => undefined)
@@ -1980,6 +2005,10 @@ async function main() {
               send({ type: "agent", event })
             },
           })
+        }
+        if (cancelController.signal.aborted) {
+          send({ type: "finished" })
+          return
         }
         runHooks(
           extensionRuntime.hooks,
@@ -2011,6 +2040,9 @@ async function main() {
       } catch {}
       state.active = false
       state.activeRunId = undefined
+      if (state.cancelController === cancelController) {
+        state.cancelController = undefined
+      }
       state.multiRun = undefined
       await persistState().catch(() => {})
       unsubscribeClose()
@@ -3544,24 +3576,35 @@ async function main() {
           return
         }
 
+        const cancelController = running.cancelController ?? new AbortController()
+        running.cancelController = cancelController
+        const alreadyCancelling = cancelController.signal.aborted
+        cancelController.abort()
+
         approvalQueue.denySession(
           target.session.id,
           "用户取消了当前任务，审批请求已取消。"
         )
 
         if (running.multiRun) {
-          await running.multiRun.cancel()
+          if (!alreadyCancelling) {
+            void running.multiRun.cancel().catch(() => undefined)
+          }
           sendJson(response, {
-            message: "已请求取消当前会话的多 Agent 任务。",
+            message: alreadyCancelling
+              ? "当前会话的多 Agent 任务正在取消。"
+              : "已请求取消当前会话的多 Agent 任务。",
             cancelled: true,
           })
           return
         }
 
-        const result = await target.session.agent.cancelCurrentRun()
+        if (!alreadyCancelling) {
+          void target.session.agent.cancelCurrentRun().catch(() => undefined)
+        }
         sendJson(response, {
-          message: result.cancelled ? "已请求取消当前任务。" : result.reason,
-          cancelled: result.cancelled,
+          message: alreadyCancelling ? "当前任务正在取消。" : "已请求取消当前任务。",
+          cancelled: true,
         })
         return
       }

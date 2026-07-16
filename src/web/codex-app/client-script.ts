@@ -192,6 +192,7 @@ export const codexAppClientScript = `    const els = {
     const streamingRunTimers = new Map()
     const streamingThoughts = new Map()
     const assistantBoundarySessions = new Set()
+    const cancellingSessionIds = new Set()
     const localSessionRunRefs = new Map()
     const persistMessagesTimers = new Map()
     const persistMessagesInFlight = new Set()
@@ -563,6 +564,13 @@ export const codexAppClientScript = `    const els = {
         if (!liveSessionIds.has(sessionId)) {
           delete messagesBySession[sessionId]
           delete queuedRunsBySession[sessionId]
+          cancellingSessionIds.delete(sessionId)
+        }
+      }
+      const activeRunIds = new Set(state.activeRunSessionIds || [])
+      for (const sessionId of cancellingSessionIds) {
+        if (!activeRunIds.has(sessionId)) {
+          cancellingSessionIds.delete(sessionId)
         }
       }
       renderSidebar()
@@ -937,6 +945,7 @@ export const codexAppClientScript = `    const els = {
       const busy = Boolean(state.busy)
       const activeBusy = isActiveSessionRunning()
       const activeRunning = isActiveSessionActivelyRunning()
+      const cancellingActiveRun = cancellingSessionIds.has(state.activeSessionId)
       const hasDraft = Boolean(els.prompt.value.trim() || pendingAttachments.length > 0)
       const sendCancelsRun = activeRunning && !hasDraft
       const modelsLoaded = Boolean(state.modelsLoaded)
@@ -1078,10 +1087,23 @@ export const codexAppClientScript = `    const els = {
       els.sendBtn.textContent = sendCancelsRun ? "" : "↑"
       els.sendBtn.setAttribute(
         "aria-label",
-        sendCancelsRun ? "取消任务" : activeBusy ? "加入队列" : "发送"
+        cancellingActiveRun
+          ? "正在取消任务"
+          : sendCancelsRun
+            ? "取消任务"
+            : activeBusy
+              ? "加入队列"
+              : "发送"
       )
-      els.sendBtn.title = sendCancelsRun ? "取消任务" : activeBusy ? "加入队列" : "发送"
+      els.sendBtn.title = cancellingActiveRun
+        ? "正在取消任务"
+        : sendCancelsRun
+          ? "取消任务"
+          : activeBusy
+            ? "加入队列"
+            : "发送"
       els.sendBtn.disabled =
+        cancellingActiveRun ||
         !hasSession ||
         !modelsLoaded ||
         (!hasDraft && !activeRunning)
@@ -7569,6 +7591,7 @@ export const codexAppClientScript = `    const els = {
         finishRunTimer(sessionId)
         finishThinking(sessionId)
         assistantBoundarySessions.delete(sessionId)
+        cancellingSessionIds.delete(sessionId)
         setLocalSessionActiveRun(sessionId, false)
         syncSessionRunningFromLocalRefs(sessionId)
 	        appendMeta("[错误] " + payload.message, true, sessionId)
@@ -7586,6 +7609,7 @@ export const codexAppClientScript = `    const els = {
         finishRunTimer(sessionId)
         finishThinking(sessionId)
         assistantBoundarySessions.delete(sessionId)
+        cancellingSessionIds.delete(sessionId)
         setLocalSessionActiveRun(sessionId, false)
         syncSessionRunningFromLocalRefs(sessionId)
         streamingAssistants.delete(sessionId)
@@ -7964,13 +7988,25 @@ export const codexAppClientScript = `    const els = {
 
     async function cancelActiveSession() {
       const cancelSessionId = state.activeSessionId
-      if (!cancelSessionId || !isSessionActivelyRunning(cancelSessionId)) return
+      if (
+        !cancelSessionId ||
+        !isSessionActivelyRunning(cancelSessionId) ||
+        cancellingSessionIds.has(cancelSessionId)
+      ) return
 
+      cancellingSessionIds.add(cancelSessionId)
+      updateControls()
       try {
         const result = await postJson("/api/cancel", { sessionId: cancelSessionId })
         appendMeta("[取消] " + result.message, false, cancelSessionId)
+        if (!result.cancelled) {
+          cancellingSessionIds.delete(cancelSessionId)
+        }
       } catch (error) {
+        cancellingSessionIds.delete(cancelSessionId)
         appendMeta("[错误] " + error.message, true, cancelSessionId)
+      } finally {
+        updateControls()
       }
     }
 

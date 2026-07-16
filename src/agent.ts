@@ -144,6 +144,7 @@ type CompactContextOptions = {
   force?: boolean
   onEvent?: (event: AgentEvent) => void
   reason: string
+  signal?: AbortSignal
 }
 
 type CodingAgentSessionOptions = {
@@ -165,6 +166,7 @@ type SendPromptOptions = {
   mcpServers?: Record<string, McpServerConfig>
   prompt: string
   onEvent: (event: AgentEvent) => void
+  signal?: AbortSignal
 }
 
 type RunPromptFailure = {
@@ -208,6 +210,13 @@ const MODEL_CONTEXT_USABLE_RATIO = 0.85
 const SDK_CONTEXT_ROLLOVER_MIN_INPUT_TOKENS = 80_000
 const SDK_RUN_ERROR_FALLBACK_MESSAGE =
   "Cursor SDK 返回 error 状态，但没有提供具体错误详情。请把这段错误信息发给维护者排查。"
+
+class UserRunCancellationError extends Error {
+  constructor() {
+    super("Run cancelled by user.")
+    this.name = "UserRunCancellationError"
+  }
+}
 
 export const DEFAULT_CONTEXT_COMPACTION_OPTIONS: ContextCompactionOptions = {
   enabled: true,
@@ -389,28 +398,76 @@ export class CodingAgentSession {
     return { cancelled: true }
   }
 
-  async sendPrompt({ images, instructions, mcpServers, prompt, onEvent }: SendPromptOptions) {
-    await this.compactContextIfNeeded(prompt, onEvent)
+  async sendPrompt({
+    images,
+    instructions,
+    mcpServers,
+    prompt,
+    onEvent,
+    signal,
+  }: SendPromptOptions) {
+    try {
+      throwIfRunCancellationRequested(signal)
+      await this.compactContextIfNeeded(prompt, onEvent, signal)
+      throwIfRunCancellationRequested(signal)
 
-    const result = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
-
-    if (result.ok) {
-      return
-    }
-
-    if (
-      result.canRetryAfterCompaction &&
-      isLikelyContextLimitError(result.error) &&
-      this.canCompactContext()
-    ) {
-      const compacted = await this.compactContext({
-        force: true,
+      const result = await this.tryRunPrompt(
+        prompt,
         onEvent,
-        reason: "context limit error",
-      })
+        instructions,
+        mcpServers,
+        images,
+        signal
+      )
 
-      if (compacted.compacted) {
-        const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
+      if (result.ok) {
+        return
+      }
+
+      throwIfRunCancellationRequested(signal)
+
+      if (
+        result.canRetryAfterCompaction &&
+        isLikelyContextLimitError(result.error) &&
+        this.canCompactContext()
+      ) {
+        const compacted = await this.compactContext({
+          force: true,
+          onEvent,
+          reason: "context limit error",
+          signal,
+        })
+
+        throwIfRunCancellationRequested(signal)
+        if (compacted.compacted) {
+          const retry = await this.tryRunPrompt(
+            prompt,
+            onEvent,
+            instructions,
+            mcpServers,
+            images,
+            signal
+          )
+
+          if (retry.ok) {
+            return
+          }
+
+          throw retry.error
+        }
+      }
+
+      if (result.canRetryWithFreshAgent) {
+        await this.resetSdkAgentForAutomaticRetry(onEvent)
+        throwIfRunCancellationRequested(signal)
+        const retry = await this.tryRunPrompt(
+          prompt,
+          onEvent,
+          instructions,
+          mcpServers,
+          images,
+          signal
+        )
 
         if (retry.ok) {
           return
@@ -418,27 +475,25 @@ export class CodingAgentSession {
 
         throw retry.error
       }
-    }
 
-    if (result.canRetryWithFreshAgent) {
-      await this.resetSdkAgentForAutomaticRetry(onEvent)
-      const retry = await this.tryRunPrompt(prompt, onEvent, instructions, mcpServers, images)
-
-      if (retry.ok) {
+      throw result.error
+    } catch (error) {
+      if (isRequestedRunCancellation(error, signal)) {
+        emitRunCancelled(onEvent)
         return
       }
 
-      throw retry.error
+      throw error
     }
-
-    throw result.error
   }
 
   private async compactContext({
     force = false,
     onEvent,
     reason,
+    signal,
   }: CompactContextOptions): Promise<CompactContextResult> {
+    throwIfRunCancellationRequested(signal)
     if (!this.context.enabled && !force) {
       const message = "Auto compaction is disabled."
       onEvent?.({ type: "compaction", status: "skipped", reason, message })
@@ -466,8 +521,10 @@ export class CodingAgentSession {
       const output = await this.createContextSummary(
         plan.entriesToCompact,
         plan.previousSummaryText,
-        reason
+        reason,
+        signal
       )
+      throwIfRunCancellationRequested(signal)
       this.memory.commitCompaction({
         output,
         plan,
@@ -498,6 +555,10 @@ export class CodingAgentSession {
 
       return result
     } catch (error) {
+      if (isRequestedRunCancellation(error, signal)) {
+        throw new UserRunCancellationError()
+      }
+
       const fallback = createFallbackSessionMemorySummary({
         entries: plan.entriesToCompact,
         existingSummary: plan.previousSummaryText,
@@ -538,7 +599,8 @@ export class CodingAgentSession {
     onEvent: (event: AgentEvent) => void,
     instructions = "",
     mcpServers?: Record<string, McpServerConfig>,
-    images?: AgentPromptImage[]
+    images?: AgentPromptImage[],
+    signal?: AbortSignal
   ): Promise<{ ok: true } | RunPromptFailure> {
     const recorder = new RunHistoryRecorder(prompt)
     let commitHistory = false
@@ -606,7 +668,9 @@ export class CodingAgentSession {
     }
 
     try {
+      throwIfRunCancellationRequested(signal)
       const agent = await this.getAgent()
+      throwIfRunCancellationRequested(signal)
       const memoryContext = this.memory.buildPromptContext()
       this.memory.recordPromptSnapshot(prompt, memoryContext)
       const message = createSdkUserMessage(
@@ -637,6 +701,10 @@ export class CodingAgentSession {
       )
 
       this.currentRun = run
+      if (signal?.aborted) {
+        await cancelRunWithTimeout(run, 5000)
+        throw new UserRunCancellationError()
+      }
 
       const stream = run.stream()[Symbol.asyncIterator]()
       while (true) {
@@ -699,13 +767,9 @@ export class CodingAgentSession {
       commitHistory = true
       return { ok: true }
     } catch (error) {
-      if (isRunCancellationError(error)) {
+      if (isRequestedRunCancellation(error, signal) || isRunCancellationError(error)) {
         commitHistory = sawEvent
-        onEvent({
-          type: "result",
-          status: "cancelled",
-          message: "Run cancelled.",
-        })
+        emitRunCancelled(onEvent)
         return { ok: true }
       }
 
@@ -919,8 +983,10 @@ export class CodingAgentSession {
 
   private async compactContextIfNeeded(
     prompt: string,
-    onEvent: (event: AgentEvent) => void
+    onEvent: (event: AgentEvent) => void,
+    signal?: AbortSignal
   ) {
+    throwIfRunCancellationRequested(signal)
     if (!this.context.enabled) {
       return
     }
@@ -935,6 +1001,7 @@ export class CodingAgentSession {
       await this.compactContext({
         onEvent,
         reason: `estimated context ${estimatedChars} chars exceeded ${maxHistoryChars}`,
+        signal,
       })
       return
     }
@@ -1023,8 +1090,10 @@ export class CodingAgentSession {
   private async createContextSummary(
     entries: ContextEntry[],
     existingSummary: string,
-    reason: string
+    reason: string,
+    signal?: AbortSignal
   ) {
+    throwIfRunCancellationRequested(signal)
     const summaryAgent = await Agent.create({
       apiKey: this.apiKey,
       mode: "agent",
@@ -1036,12 +1105,14 @@ export class CodingAgentSession {
       },
     })
 
+    let run: Run | null = null
     try {
+      throwIfRunCancellationRequested(signal)
       const transcript = clampTextMiddle(
         contextEntriesToText(entries),
         this.context.maxCompactionInputChars
       )
-      const run = await summaryAgent.send(
+      run = await summaryAgent.send(
         buildCompactionPrompt({
           existingSummary,
           maxSummaryChars: this.context.summaryMaxChars,
@@ -1054,12 +1125,18 @@ export class CodingAgentSession {
           ...(this.force ? { local: { force: true } } : {}),
         }
       )
+      this.currentRun = run
+      if (signal?.aborted) {
+        await cancelRunWithTimeout(run, 5000)
+        throw new UserRunCancellationError()
+      }
       let streamedText = ""
 
       for await (const event of run.stream()) {
         streamedText += assistantTextFromSdkMessage(event)
       }
 
+      throwIfRunCancellationRequested(signal)
       const result = await run.wait()
       const summary = (result.result || streamedText).trim()
 
@@ -1069,6 +1146,9 @@ export class CodingAgentSession {
 
       return parseSessionMemorySummary(summary, this.context.summaryMaxChars)
     } finally {
+      if (this.currentRun === run) {
+        this.currentRun = null
+      }
       await summaryAgent[Symbol.asyncDispose]()
     }
   }
@@ -1826,6 +1906,24 @@ function isHttp2StreamFrameError(error: unknown) {
 
 function isRunCancellationError(error: unknown) {
   return isSdkCancellationError(error)
+}
+
+function throwIfRunCancellationRequested(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new UserRunCancellationError()
+  }
+}
+
+function isRequestedRunCancellation(error: unknown, signal?: AbortSignal) {
+  return signal?.aborted === true || error instanceof UserRunCancellationError
+}
+
+function emitRunCancelled(onEvent: (event: AgentEvent) => void) {
+  onEvent({
+    type: "result",
+    status: "cancelled",
+    message: "Run cancelled.",
+  })
 }
 
 function isContextLimitStatus(
